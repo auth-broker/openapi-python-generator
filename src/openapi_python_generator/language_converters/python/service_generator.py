@@ -428,17 +428,18 @@ def generate_services(
     services = []
     service_ops = []
     for path_name, path in paths.items():
+        clean_path_name = clean_up_path_name(path_name)
         for http_operation in HTTP_OPERATIONS:
             op = path.__getattribute__(http_operation)
             if op is None:
                 continue
 
             if library_config.include_sync:
-                sync_so = generate_service_operation(op, path_name, False)
+                sync_so = generate_service_operation(op, clean_path_name, False)
                 service_ops.append(sync_so)
 
             if library_config.include_async:
-                async_so = generate_service_operation(op, path_name, True)
+                async_so = generate_service_operation(op, clean_path_name, True)
                 service_ops.append(async_so)
 
     # Ensure every operation has a tag; fallback to "default" for untagged operations
@@ -489,3 +490,11 @@ def generate_services(
         )
 
     return services
+
+
+def clean_up_path_name(path_name: str) -> str:
+    # Clean up path name: only replace dashes inside curly brackets for f-string compatibility, keep other dashes
+    def _replace_bracket_dashes(match):
+        return "{" + match.group(1).replace("-", "_") + "}"
+
+    return re.sub(r"\{([^}/]+)\}", _replace_bracket_dashes, path_name)

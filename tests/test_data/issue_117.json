@@ -1,0 +1,29 @@
+{
+  "openapi": "3.1.0",
+    "info": {
+        "title": "New Specs",
+        "version": "1.0.0"
+    },
+  "paths": {
+
+      "/bar-boz/{foo-bar}": {
+        "get": {
+
+          "parameters": [
+            {
+              "name": "foo-bar",
+              "in": "path",
+              "description": "Buzz.",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ]
+        }
+      }
+  },
+  "components": {
+    "schemas": {}
+  }
+}
