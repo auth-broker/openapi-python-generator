@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 import click
 from openapi_pydantic.v3 import (
     Operation,
-    Parameter,
     PathItem,
     Reference,
     Response,
@@ -24,6 +23,7 @@ from openapi_pydantic.v3.v3_0 import (
 from openapi_pydantic.v3.v3_0 import (
     Schema as Schema30,
 )
+from openapi_pydantic.v3.v3_0.parameter import Parameter as Parameter30
 from openapi_pydantic.v3.v3_1 import (
     MediaType as MediaType31,
 )
@@ -36,6 +36,7 @@ from openapi_pydantic.v3.v3_1 import (
 from openapi_pydantic.v3.v3_1 import (
     Schema as Schema31,
 )
+from openapi_pydantic.v3.v3_1.parameter import Parameter as Parameter31
 
 from openapi_python_generator.language_converters.python import common
 from openapi_python_generator.language_converters.python.common import normalize_symbol
@@ -152,7 +153,7 @@ def generate_params(operation: Operation) -> str:
     default_params = ""
     if operation.parameters is not None:
         for param in operation.parameters:
-            if not isinstance(param, Parameter):
+            if not isinstance(param, (Parameter30, Parameter31)):
                 continue  # pragma: no cover
             converted_result = ""
             required = False
@@ -245,7 +246,7 @@ def _generate_params(
 
     params = []
     for param in operation.parameters:
-        if isinstance(param, Parameter) and param.param_in == param_in:
+        if isinstance(param, (Parameter30, Parameter31)) and param.param_in == param_in:
             param_name_cleaned = common.normalize_symbol(param.name)
             params.append(f"{param.name!r} : {param_name_cleaned}")
 
@@ -358,10 +359,13 @@ def generate_services(
                 existing_names = set()
                 if op.parameters is not None:
                     for p in op.parameters:  # type: ignore
-                        if isinstance(p, Parameter):
+                        if isinstance(p, (Parameter30, Parameter31)):
                             existing_names.add(p.name)
                 for p in path_level_params:
-                    if isinstance(p, Parameter) and p.name not in existing_names:
+                    if (
+                        isinstance(p, (Parameter30, Parameter31))
+                        and p.name not in existing_names
+                    ):
                         if op.parameters is None:
                             op.parameters = []  # type: ignore
                         op.parameters.append(p)  # type: ignore

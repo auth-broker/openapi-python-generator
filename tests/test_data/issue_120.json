@@ -1,0 +1,53 @@
+{
+  "openapi": "3.0.0",
+    "info": {
+        "title": "New Specs",
+        "version": "1.0.0"
+    },
+  "paths": {
+    "/foo-bar": {
+      "get": {
+        "operationId": "getFooBar",
+        "parameters": [
+          {
+            "name": "language",
+            "in": "query",
+            "description": "strLanguageParam",
+            "required": false,
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "enum": [
+                "en",
+                "es",
+                "fr"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {}
+  }
+}
