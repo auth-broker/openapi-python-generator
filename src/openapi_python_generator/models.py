@@ -61,6 +61,7 @@ class ServiceOperation(BaseModel):
     path_name: str
     body_param: Optional[str] = None
     method: str
+    is_sse: bool = False
     use_orjson: bool = False
 
 
