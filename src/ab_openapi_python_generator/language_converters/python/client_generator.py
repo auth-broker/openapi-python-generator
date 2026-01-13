@@ -363,34 +363,28 @@ def generate_clients(
     def _generate_service_operation(
         op: Operation, path_obj: PathItem, path_name: str, http_operation: str, async_type: bool
     ) -> ServiceOperation:
-        try:
-            path_level_params = []
-            if hasattr(path_obj, "parameters") and path_obj.parameters is not None:
-                path_level_params = [p for p in path_obj.parameters if p is not None]
-            if path_level_params:
-                existing_names = set()
-                if op.parameters is not None:
-                    for p in op.parameters:
-                        if isinstance(p, (Parameter30, Parameter31)):
-                            existing_names.add(p.name)
-                for p in path_level_params:
-                    if isinstance(p, (Parameter30, Parameter31)) and p.name not in existing_names:
-                        if op.parameters is None:
-                            op.parameters = []  # type: ignore
-                        op.parameters.append(p)  # type: ignore
-        except Exception:
-            pass
+        path_level_params = []
+        if hasattr(path_obj, "parameters") and path_obj.parameters is not None:
+            path_level_params = [p for p in path_obj.parameters if p is not None]
+        if path_level_params:
+            existing_names = set()
+            if op.parameters is not None:
+                for p in op.parameters:
+                    if isinstance(p, (Parameter30, Parameter31)):
+                        existing_names.add(p.name)
+            for p in path_level_params:
+                if isinstance(p, (Parameter30, Parameter31)) and p.name not in existing_names:
+                    if op.parameters is None:
+                        op.parameters = []  # type: ignore
+                    op.parameters.append(p)  # type: ignore
 
         params = generate_params(op)
-        try:
-            placeholder_names = [m.group(1) for m in re.finditer(r"\{([^}/]+)\}", path_name)]
-            existing_param_names = {p.split(":")[0].strip() for p in params.split(",") if ":" in p}
-            for ph in placeholder_names:
-                norm_ph = common.normalize_symbol(ph)
-                if norm_ph not in existing_param_names and norm_ph:
-                    params = f"{norm_ph}: Any, " + params
-        except Exception:
-            pass
+        placeholder_names = [m.group(1) for m in re.finditer(r"\{([^}/]+)\}", path_name)]
+        existing_param_names = {p.split(":")[0].strip() for p in params.split(",") if ":" in p}
+        for ph in placeholder_names:
+            norm_ph = common.normalize_symbol(ph)
+            if norm_ph not in existing_param_names and norm_ph:
+                params = f"{norm_ph}: Any, " + params
 
         operation_id = generate_operation_id(op, http_operation, path_name)
         query_params = generate_query_params(op)

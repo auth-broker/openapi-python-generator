@@ -190,7 +190,7 @@ class TestOpenAPI30:
             assert (output_dir / "__init__.py").exists()
             assert (output_dir / "models").exists()
             assert (output_dir / "services").exists()
-            assert (output_dir / "api_config.py").exists()
+            assert (output_dir / "exceptions").exists()
 
             # Check model structure
             assert (output_dir / "models" / "__init__.py").exists()

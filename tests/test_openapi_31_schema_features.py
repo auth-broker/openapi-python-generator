@@ -394,9 +394,9 @@ class TestOpenAPI31SchemaFeatures:
             )
 
             # Verify files are generated
-            assert (temp_path / "models.py").exists()
-            assert (temp_path / "services" / "general_service.py").exists()
-            assert (temp_path / "api_config.py").exists()
+            assert (temp_path / "models").exists()
+            assert (temp_path / "clients").exists()
+            assert (temp_path / "exceptions").exists()
 
             # Verify the generated code compiles
             models_content = (temp_path / "models.py").read_text()

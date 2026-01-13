@@ -125,7 +125,7 @@ def write_data(data: ConversionResult, output: Union[str, Path], formatter: Form
     Creates:
       - models/ (and models/__init__.py)
       - clients/ (and clients/__init__.py)
-      - exceptions.py (package root, if present)
+      - exceptions (package root/__init__.py)
       - __init__.py (package root)
     """
     out = Path(output)

@@ -266,7 +266,7 @@ def _discover_discriminated_unions(
             register_union(schema_name, schema)
 
     # 2) inline/property discriminated unions
-    for parent_name, parent_schema in components.schemas.items():
+    for _parent_name, parent_schema in components.schemas.items():
         props = getattr(parent_schema, "properties", None) or {}
         for prop_name, prop_schema in props.items():
             disc = getattr(prop_schema, "discriminator", None)

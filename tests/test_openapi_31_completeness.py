@@ -356,8 +356,8 @@ class TestOpenAPI31Completeness:
             # Verify basic structure
             assert (temp_path / "__init__.py").exists()
             assert (temp_path / "models").exists()
-            assert (temp_path / "services").exists()
-            assert (temp_path / "api_config.py").exists()
+            assert (temp_path / "clients").exists()
+            assert (temp_path / "exceptions").exists()
 
             # Verify library-specific imports in services
             services_dir = temp_path / "services"
@@ -538,7 +538,7 @@ class TestOpenAPI31Completeness:
             # Verify files exist
             assert (temp_path / "__init__.py").exists()
             assert (temp_path / "models").exists()
-            assert (temp_path / "services").exists()
+            assert (temp_path / "clients").exists()
 
             # Check for orjson usage if enabled
             if use_orjson:

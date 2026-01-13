@@ -327,8 +327,8 @@ class TestOpenAPI31SupportedFeatures:
 
             # Verify files exist
             assert (temp_path / "models").exists()
-            assert (temp_path / "services").exists()
-            assert (temp_path / "api_config.py").exists()
+            assert (temp_path / "clients").exists()
+            assert (temp_path / "exceptions").exists()
 
             # Check that the code compiles
             models_dir = temp_path / "models"

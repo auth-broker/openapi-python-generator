@@ -129,7 +129,7 @@ class TestSwaggerPetstore30:
             assert (output_dir / "__init__.py").exists()
             assert (output_dir / "models").exists()
             assert (output_dir / "services").exists()
-            assert (output_dir / "api_config.py").exists()
+            assert (output_dir / "exceptions").exists()
 
             # Check model files
             models_dir = output_dir / "models"
@@ -169,7 +169,7 @@ class TestSwaggerPetstore30:
 
             # Basic validation that output was created
             assert output_dir.exists()
-            assert (output_dir / "api_config.py").exists()
+            assert (output_dir / "exceptions").exists()
 
     def test_petstore_30_model_generation(self, petstore_30_spec):
         """Test that model generation works correctly for Petstore 3.0."""

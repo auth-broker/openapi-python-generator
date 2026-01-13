@@ -28,8 +28,9 @@ def create_jinja_env():
             if custom_template_path is not None
             else FileSystemLoader(TEMPLATE_PATH)
         ),
-        autoescape=True,
+        autoescape=False,
         trim_blocks=True,
+        lstrip_blocks=True,
     )
 
     environment.filters["normalize_symbol"] = common.normalize_symbol

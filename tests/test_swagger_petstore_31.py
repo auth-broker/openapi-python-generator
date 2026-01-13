@@ -148,8 +148,8 @@ class TestSwaggerPetstore31:
             # Check that files were generated
             assert (output_dir / "__init__.py").exists()
             assert (output_dir / "models").exists()
-            assert (output_dir / "services").exists()
-            assert (output_dir / "api_config.py").exists()
+            assert (output_dir / "clients").exists()
+            assert (output_dir / "exceptions").exists()
 
             # Check model files
             models_dir = output_dir / "models"
@@ -189,7 +189,7 @@ class TestSwaggerPetstore31:
 
             # Basic validation that output was created
             assert output_dir.exists()
-            assert (output_dir / "api_config.py").exists()
+            assert (output_dir / "exceptions").exists()
 
     @pytest.mark.parametrize("use_orjson", [True, False])
     def test_petstore_31_with_orjson_options(self, petstore_31_spec_path, use_orjson):
@@ -207,7 +207,7 @@ class TestSwaggerPetstore31:
 
             # Basic validation that output was created
             assert output_dir.exists()
-            assert (output_dir / "api_config.py").exists()
+            assert (output_dir / "exceptions").exists()
 
     def test_petstore_31_uuid_parameters(self, petstore_31_spec):
         """Test that UUID parameters in Petstore 3.1 are handled correctly."""
