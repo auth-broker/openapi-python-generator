@@ -1,0 +1,17 @@
+{# Renders ONE standalone python module that defines a named Union/Annotated alias #}
+{% if discriminator_key -%}
+from typing import Annotated, Union
+from pydantic import Field
+{% else -%}
+from typing import Union
+{% endif %}
+
+{% for imp in member_imports -%}
+{{ imp }}
+{% endfor %}
+
+{% if discriminator_key -%}
+{{ alias_name }} = Annotated[{{ union_type }}, Field(discriminator="{{ discriminator_key }}")]
+{% else -%}
+{{ alias_name }} = {{ union_type }}
+{% endif -%}
