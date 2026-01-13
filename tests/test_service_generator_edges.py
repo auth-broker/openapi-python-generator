@@ -24,5 +24,6 @@ def test_generate_return_type_no_json_content():
     )
     rt = service_generator.generate_return_type(op)
     assert isinstance(rt, OpReturnType)
-    assert rt.type is None
+    assert rt.type is not None
+    assert rt.type.converted_type == "str"
     assert rt.complex_type is False
