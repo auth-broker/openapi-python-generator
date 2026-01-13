@@ -6,8 +6,8 @@
 [![License](https://img.shields.io/pypi/l/openapi-python-generator)][license]
 
 [![](https://img.shields.io/static/v1?label=documentation&message=enabled&color=<COLOR>)][documentation]
-[![Tests](https://github.com/MarcoMuellner/openapi-python-generator/workflows/Tests/badge.svg)][tests]
-[![Codecov](https://codecov.io/gh/MarcoMuellner/openapi-python-generator/branch/main/graph/badge.svg)][codecov]
+[![Tests](https://github.com/auth-broker/openapi-python-generator/workflows/Tests/badge.svg)][tests]
+[![Codecov](https://codecov.io/gh/auth-broker/openapi-python-generator/branch/main/graph/badge.svg)][codecov]
 
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)][pre-commit]
 [![Black](https://img.shields.io/badge/code%20style-black-000000.svg)][black]
