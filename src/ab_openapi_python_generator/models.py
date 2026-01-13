@@ -80,21 +80,6 @@ class Model(BaseModel):
     properties: List[Property] = []
 
 
-class Service(BaseModel):
-    file_name: str
-    operations: List[ServiceOperation]
-    content: str
-    async_client: Optional[bool] = False
-    library_import: str
-    use_orjson: bool = False
-
-
-class APIConfig(BaseModel):
-    file_name: str
-    base_url: str
-    content: str
-
-
 class ConversionResult(BaseModel):
     models: List[Model] = Field(default_factory=list)
     clients: List[Model] = Field(default_factory=list)

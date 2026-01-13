@@ -131,10 +131,10 @@ def test_generate_code(
 
     # Get the base URL from the API config
     if custom_ip is not None:
-        api_config_instance.base_path = custom_ip
+        api_config_instance.base_url = custom_ip
         base_url = custom_ip
     else:
-        base_url = api_config_instance.base_path
+        base_url = api_config_instance.base_url
 
     # Ensure base_url doesn't have trailing slash for consistent URL construction
     base_url = base_url.rstrip("/")
@@ -431,7 +431,7 @@ async def _run_service_tests_aiohttp(
         port = sockets[0].getsockname()[1]
 
     base_url = f"{scheme}://{host}:{port}"
-    api_config_instance.base_path = base_url
+    api_config_instance.base_url = base_url
 
     try:
         # Call async generated functions

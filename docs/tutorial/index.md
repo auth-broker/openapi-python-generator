@@ -788,7 +788,7 @@ only sync (for __requests__) or only async (for __aiohttp__) services.
     ``` py
     ...
     async def async_root__get() -> RootResponse:
-        base_path = APIConfig().base_path
+        base_url = APIConfig().base_url
         path = f"/"
         headers = {
             "Content-Type": "application/json",
@@ -797,7 +797,7 @@ only sync (for __requests__) or only async (for __aiohttp__) services.
         }
         query_params = {}
 
-        with httpx.AsyncClient(base_url=base_path) as client:
+        with httpx.AsyncClient(base_url=base_url) as client:
             response = await client.request(
                 method="get",
                 url=path,
@@ -815,7 +815,7 @@ only sync (for __requests__) or only async (for __aiohttp__) services.
     ``` py
     ...
     def root__get() -> RootResponse:
-        base_path = APIConfig().base_path
+        base_url = APIConfig().base_url
         path = f"/"
         headers = {
             "Content-Type": "application/json",
@@ -824,7 +824,7 @@ only sync (for __requests__) or only async (for __aiohttp__) services.
         }
         query_params = {}
 
-        with httpx.Client(base_url=base_path) as client:
+        with httpx.Client(base_url=base_url) as client:
             response = client.request(
                 method="get",
                 url=path,

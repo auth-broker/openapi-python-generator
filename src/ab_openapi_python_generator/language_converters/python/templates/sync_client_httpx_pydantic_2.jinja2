@@ -3,17 +3,17 @@
 from typing import Any, Dict, Optional, Union
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 
 from ..models import *
-{% set _base_path = servers[0].url if servers|length > 0 else "/" %}
+{% set _base_url = servers[0].url if servers|length > 0 else "/" %}
 from ..exceptions import HTTPException
 
 
 class SyncClient(BaseModel):
     model_config = {"validate_assignment": True}
 
-    base_path: str = "{{ _base_path }}"
+    base_url: str = "{{ _base_url }}"
     verify: Union[bool, str] = True
 {% if env_token_name is none %}
     access_token: Optional[str] = None
@@ -41,7 +41,7 @@ class SyncClient(BaseModel):
 
 {% for op in operations %}
     def {{ op.operation_id }}(self{% if op.params %}, {{ op.params }}{% endif %}) -> Any:
-        base_path = self.base_path
+        base_url = self.base_url
         path = f"{{ op.path_name }}"
 
         headers = {
@@ -57,7 +57,7 @@ class SyncClient(BaseModel):
         }
         query_params = {k: v for (k, v) in query_params.items() if v is not None}
 
-        with httpx.Client(base_url=base_path, verify=self.verify) as client:
+        with httpx.Client(base_url=base_url, verify=self.verify) as client:
             response = client.request(
                 "{{ op.method }}",
                 httpx.URL(path),
