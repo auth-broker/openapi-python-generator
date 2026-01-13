@@ -44,6 +44,52 @@ Reference = Union[Reference30, Reference31]
 Components = Union[Components30, Components31]
 
 
+# Map of wrapper component name -> TypeConversion to use instead of generating wrapper module
+_REFERENCE_TYPE_OVERRIDES: dict[str, TypeConversion] = {}
+
+
+def _is_null_schema(s: object) -> bool:
+    t = getattr(s, "type", None)
+    return t == "null" or str(t) == "DataType.NULL"
+
+
+def _build_nullable_wrapper_overrides(components: Components) -> dict[str, TypeConversion]:
+    """
+    Collapse component schemas shaped like:
+      X = anyOf/oneOf: [ $ref: Y, {type: null} ]
+    into an override so refs to X become Optional[Y] without generating X.py.
+    """
+    overrides: dict[str, TypeConversion] = {}
+    schemas = getattr(components, "schemas", None)
+    if not schemas:
+        return overrides
+
+    for schema_name, schema in schemas.items():
+        # Only non-discriminator wrappers
+        if getattr(schema, "discriminator", None) is not None:
+            continue
+
+        variants = getattr(schema, "anyOf", None) or getattr(schema, "oneOf", None)
+        if not variants or len(variants) != 2:
+            continue
+
+        ref = next((v for v in variants if isinstance(v, (Reference30, Reference31))), None)
+        nul = next((v for v in variants if isinstance(v, (Schema30, Schema31)) and _is_null_schema(v)), None)
+        if ref is None or nul is None:
+            continue
+
+        wrapper_name = common.normalize_symbol(schema_name)
+        target_model = common.normalize_symbol(ref.ref.split("/")[-1])
+
+        overrides[wrapper_name] = TypeConversion(
+            original_type=ref.ref,
+            converted_type=f"Optional[{target_model}]",
+            import_types=[f"from .{target_model} import {target_model}"],
+        )
+
+    return overrides
+
+
 def _get_discriminator_key(schema: Schema) -> Optional[str]:
     """
     Return discriminator property name if present on the schema.
@@ -303,6 +349,15 @@ def type_converter(  # noqa: C901
     # Handle Reference objects by converting them to type references
     if isinstance(schema, Reference30) or isinstance(schema, Reference31):
         import_type = common.normalize_symbol(schema.ref.split("/")[-1])
+        # Nullable-wrapper collapse: ref to X may be overridden to Optional[Y]
+        override = _REFERENCE_TYPE_OVERRIDES.get(import_type)
+        if override is not None:
+            return TypeConversion(
+                original_type=schema.ref,
+                converted_type=override.converted_type,
+                import_types=override.import_types,
+            )
+
         if required:
             converted_type = import_type
         else:
@@ -658,6 +713,11 @@ def generate_models(
         return models
 
     jinja_env = create_jinja_env()
+    # Build nullable-wrapper overrides so refs to simple wrappers (X = anyOf[$ref Y, null])
+    # are collapsed to Optional[Y] and we avoid generating X.py (which can collide on Windows).
+    global _REFERENCE_TYPE_OVERRIDES
+    _REFERENCE_TYPE_OVERRIDES = _build_nullable_wrapper_overrides(components)
+
     discriminator_bindings, enum_members_by_name = _discover_discriminated_unions(components)
 
     # Track alias modules so we only create each once
@@ -665,6 +725,10 @@ def generate_models(
 
     for schema_name, schema_or_reference in components.schemas.items():
         name = common.normalize_symbol(schema_name)
+
+        # Don't generate standalone modules for nullable wrapper components
+        if name in _REFERENCE_TYPE_OVERRIDES:
+            continue
 
         # --------------------------
         # Enums
@@ -739,42 +803,45 @@ def generate_models(
                 alias_name = _alias_name_for_property(prop_name)
                 discriminator_key = _get_discriminator_key(prop_schema)
 
-                # Build the union type and gather imports from members.
-                # Important: we want a NON-optional union for the alias definition.
-                union_conv = type_converter(prop_schema, required=True, model_name=name)
-                union_type_str = union_conv.converted_type  # e.g. Union[A,B,C]
-                member_imports = union_conv.import_types or []
+                # Only generate standalone alias modules for DISCRIMINATED unions.
+                # Plain unions (including nullable wrappers) are left inline.
+                if discriminator_key is not None:
+                    # Build the union type and gather imports from members.
+                    # Important: we want a NON-optional union for the alias definition.
+                    union_conv = type_converter(prop_schema, required=True, model_name=name)
+                    union_type_str = union_conv.converted_type  # e.g. Union[A,B,C]
+                    member_imports = union_conv.import_types or []
 
-                # Create alias module once
-                if alias_name not in alias_models_by_name:
-                    alias_content = _render_union_alias_module(
-                        jinja_env=jinja_env,
-                        alias_name=alias_name,
-                        union_type=union_type_str,
-                        discriminator_key=discriminator_key,
-                        member_imports=member_imports,
+                    # Create alias module once
+                    if alias_name not in alias_models_by_name:
+                        alias_content = _render_union_alias_module(
+                            jinja_env=jinja_env,
+                            alias_name=alias_name,
+                            union_type=union_type_str,
+                            discriminator_key=discriminator_key,
+                            member_imports=member_imports,
+                        )
+
+                        # Validate alias module compiles
+                        try:
+                            compile(alias_content, "<string>", "exec")
+                        except SyntaxError as e:  # pragma: no cover
+                            click.echo(f"Error in union alias {alias_name}: {e}")  # pragma: no cover
+
+                        alias_models_by_name[alias_name] = Model(
+                            file_name=alias_name,
+                            content=alias_content,
+                            openapi_object=prop_schema,
+                            properties=[],
+                        )
+
+                    # Rewrite property type to use alias
+                    rewritten_type = alias_name if conv_property.required else f"Optional[{alias_name}]"
+                    conv_property.type = TypeConversion(
+                        original_type=conv_property.type.original_type,
+                        converted_type=rewritten_type,
+                        import_types=[f"from .{alias_name} import {alias_name}"],
                     )
-
-                    # Validate alias module compiles
-                    try:
-                        compile(alias_content, "<string>", "exec")
-                    except SyntaxError as e:  # pragma: no cover
-                        click.echo(f"Error in union alias {alias_name}: {e}")  # pragma: no cover
-
-                    alias_models_by_name[alias_name] = Model(
-                        file_name=alias_name,
-                        content=alias_content,
-                        openapi_object=prop_schema,
-                        properties=[],
-                    )
-
-                # Rewrite property type to use alias
-                rewritten_type = alias_name if conv_property.required else f"Optional[{alias_name}]"
-                conv_property.type = TypeConversion(
-                    original_type=conv_property.type.original_type,
-                    converted_type=rewritten_type,
-                    import_types=[f"from .{alias_name} import {alias_name}"],
-                )
 
             properties.append(conv_property)
 
