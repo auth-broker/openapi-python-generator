@@ -148,9 +148,9 @@ def write_data(
     models_path = Path(output) / "models"
     models_path.mkdir(parents=True, exist_ok=True)
 
-    # Create the services module.
-    services_path = Path(output) / "services"
-    services_path.mkdir(parents=True, exist_ok=True)
+    # Create the clients module.
+    clients_path = Path(output) / "clients"
+    clients_path.mkdir(parents=True, exist_ok=True)
 
     files: List[str] = []
 
@@ -168,47 +168,44 @@ def write_data(
 
     files = []
 
-    # Write the services.
-    jinja_env = create_jinja_env()
-    for service in data.services:
-        if len(service.operations) == 0:
-            continue
-        files.append(service.file_name)
-        write_code(
-            services_path / f"{service.file_name}.py",
-            jinja_env.get_template(SERVICE_TEMPLATE).render(**service.model_dump()),
-            formatter,
-        )
-
-    # Create services.__init__.py file containing imports to all services.
-    write_code(services_path / "__init__.py", "", formatter)
-
     # ----------------------------
-    # Write top-level modules
-    # (e.g. sync_client.py, async_client.py, exceptions.py, api_config.py if still used)
+    # Write generated clients into clients/
     # ----------------------------
-    top_level_exports: List[str] = []
+    client_files: List[str] = []
+    generated_clients = getattr(data, "clients", None)
+    if generated_clients:
+        for m in generated_clients:
+            write_code(clients_path / f"{m.file_name}.py", m.content, formatter)
+            client_files.append(m.file_name)
 
-    # New-style: generated modules (clients/exceptions/etc.)
-    generated_modules = getattr(data, "clients", None)
-    if generated_modules:
-        for m in generated_modules:
-            write_code(Path(output) / f"{m.file_name}.py", m.content, formatter)
-            top_level_exports.append(m.file_name)
+    # Write exceptions.py at package root (shared support module)
+    if getattr(data, "exceptions", None) is not None:
+        ex = data.exceptions
+        if ex is not None:
+            write_code(Path(output) / "exceptions.py", ex.content, formatter)
+
+    # Create clients.__init__.py exporting all generated client modules
+    write_code(
+        clients_path / "__init__.py",
+        "\n".join([f"from .{f} import *" for f in client_files]) + ("\n" if client_files else ""),
+        formatter,
+    )
 
     # Backwards-compatible: api_config.py (only if present)
     if getattr(data, "api_config", None) is not None:
-        write_code(Path(output) / "api_config.py", data.api_config.content, formatter)
-        top_level_exports.append("api_config")
+        ac = data.api_config
+        if ac is not None:
+            write_code(Path(output) / "api_config.py", ac.content, formatter)
+        # (optional) keep exporting api_config from package root if you still generate it
 
     # Write the package __init__.py
     init_lines: List[str] = []
     init_lines.append("from .models import *")
-    # Keep services export if you still generate services (harmless even if services/__init__.py is empty)
-    init_lines.append("from .services import *")
-    # Export generated top-level modules (sync_client/async_client/exceptions/etc.)
-    for mod in top_level_exports:
-        init_lines.append(f"from .{mod} import *")
+    # Export clients package
+    init_lines.append("from .clients import *")
+    # Export exceptions if present
+    if getattr(data, "exceptions", None) is not None:
+        init_lines.append("from .exceptions import *")
 
     write_code(Path(output) / "__init__.py", "\n".join(init_lines) + "\n", formatter)
 

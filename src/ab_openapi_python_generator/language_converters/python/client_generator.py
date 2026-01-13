@@ -377,13 +377,21 @@ def generate_return_type(operation: Operation) -> OpReturnType:
         raise Exception("Unknown media type schema type")  # pragma: no cover
 
 
+def clean_up_path_name(path_name: str) -> str:
+    # Clean up path name: only replace dashes inside curly brackets for f-string compatibility, keep other dashes
+    def _replace_bracket_dashes(match):
+        return "{" + match.group(1).replace("-", "_") + "}"
+
+    return re.sub(r"\{([^}/]+)\}", _replace_bracket_dashes, path_name)
+
+
 def generate_clients(
     openapi: Any,
     paths: Dict[str, PathItem],
     library_config: LibraryConfig,
     env_token_name: Optional[str],
     pydantic_version: PydanticVersion,
-) -> List[Model]:
+) -> Tuple[List[Model], Optional[Model]]:
     """
     Generate two client modules:
       - sync_client.py (SyncClient)
@@ -485,8 +493,11 @@ def generate_clients(
     compile(async_content, "<string>", "exec")
     compile(exceptions_content, "<string>", "exec")
 
-    return [
-        Model(file_name="exceptions", content=exceptions_content, openapi_object={}, properties=[]),
+    clients: List[Model] = [
         Model(file_name="sync_client", content=sync_content, openapi_object={}, properties=[]),
         Model(file_name="async_client", content=async_content, openapi_object={}, properties=[]),
     ]
+
+    exceptions_model = Model(file_name="exceptions", content=exceptions_content, openapi_object={}, properties=[])
+
+    return clients, exceptions_model

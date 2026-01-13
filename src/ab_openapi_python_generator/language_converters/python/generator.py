@@ -8,7 +8,7 @@ from ab_openapi_python_generator.language_converters.python import common
 from ab_openapi_python_generator.language_converters.python.model_generator import (
     generate_models,
 )
-from ab_openapi_python_generator.language_converters.python.service_generator import (
+from ab_openapi_python_generator.language_converters.python.client_generator import (
     generate_clients,
 )
 from ab_openapi_python_generator.models import ConversionResult, LibraryConfig
@@ -38,13 +38,14 @@ def generator(
         models = []
 
     if data.paths is not None:
-        clients = generate_clients(data, data.paths, library_config, env_token_name, pydantic_version)
+        clients, exceptions = generate_clients(
+            data, data.paths, library_config, env_token_name, pydantic_version
+        )
     else:
-        clients = []
+        clients, exceptions = [], None
 
     return ConversionResult(
         models=models,
-        services=[],          # keep field if your writer expects it
-        api_config=None,      # keep field if your writer expects it
         clients=clients,
+        exceptions=exceptions,
     )
