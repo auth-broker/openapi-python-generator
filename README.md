@@ -50,7 +50,7 @@ __Documentation:__ [here][documentation]
 You can install _Openapi Python Generator_ via [pip] from [PyPI]:
 
 ```console
-$ pip install openapi-python-generator
+$ pip install ab-openapi-python-generator
 ```
 
 ## Usage
