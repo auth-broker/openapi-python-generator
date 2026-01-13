@@ -1,13 +1,18 @@
 {% if env_token_name is not none %}import os{% endif %}
 
+from __future__ import annotations
+
+from collections.abc import Generator
 from typing import Any, Dict, Optional, Union
+import json
 
 import httpx
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 from ..models import *
-{% set _base_url = servers[0].url if servers|length > 0 else "/" %}
 from ..exceptions import HTTPException
+
+{% set _base_url = servers[0].url if servers|length > 0 else "/" %}
 
 
 class SyncClient(BaseModel):
@@ -40,13 +45,24 @@ class SyncClient(BaseModel):
 {% endif %}
 
 {% for op in operations %}
-    def {{ op.operation_id }}(self{% if op.params %}, {{ op.params }}{% endif %}) -> Any:
+    def {{ op.operation_id }}(self{% if op.params %}, {{ op.params }}{% endif %}) -> {%- if op.is_sse -%}
+Generator[str | dict[str, Any], None, None]
+{%- else -%}
+{%- if op.return_type.type is none or op.return_type.type.converted_type is none -%}None
+{%- elif op.return_type.list_type is not none -%}list[{{ op.return_type.list_type }}]
+{%- else -%}{{ op.return_type.type.converted_type }}
+{%- endif -%}
+{%- endif -%}:
         base_url = self.base_url
         path = f"{{ op.path_name }}"
 
         headers = {
             "Content-Type": "application/json",
+{% if op.is_sse %}
+            "Accept": "text/event-stream",
+{% else %}
             "Accept": "application/json",
+{% endif %}
             "Authorization": f"Bearer { self.get_access_token() }",
         }
 
@@ -57,6 +73,43 @@ class SyncClient(BaseModel):
         }
         query_params = {k: v for (k, v) in query_params.items() if v is not None}
 
+{% if op.is_sse %}
+        with httpx.Client(base_url=base_url, verify=self.verify) as client:
+            with client.stream(
+                "{{ op.method }}",
+                httpx.URL(path),
+                headers=headers,
+                params=query_params,
+{% if op.body_param %}
+                json={{ op.body_param }},
+{% endif %}
+            ) as response:
+                if response.status_code != {{ op.return_type.status_code }}:
+                    raise HTTPException(
+                        response.status_code,
+                        f"{{ op.operation_id }} failed with status code: {response.status_code}",
+                    )
+
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data:"):
+                        payload = line[len("data:"):].strip()
+                        if not payload:
+                            continue
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            obj = json.loads(payload)
+                            if isinstance(obj, dict):
+                                yield obj
+                            else:
+                                yield payload
+                        except Exception:
+                            yield payload
+                    else:
+                        yield line
+{% else %}
         with httpx.Client(base_url=base_url, verify=self.verify) as client:
             response = client.request(
                 "{{ op.method }}",
@@ -75,6 +128,18 @@ class SyncClient(BaseModel):
             )
 
         body = None if {{ op.return_type.status_code }} == 204 else response.json()
+
+{% if op.return_type.type is none or op.return_type.type.converted_type is none %}
+        return None
+{% elif op.return_type.complex_type %}
+{% if op.return_type.list_type is none %}
+        return {{ op.return_type.type.converted_type }}.model_validate(body) if body is not None else {{ op.return_type.type.converted_type }}()
+{% else %}
+        return [{{ op.return_type.list_type }}.model_validate(item) for item in (body or [])]
+{% endif %}
+{% else %}
         return body
+{% endif %}
+{% endif %}
 
 {% endfor %}
