@@ -18,7 +18,7 @@ from openapi_pydantic.v3.v3_1 import (
 from openapi_pydantic.v3.v3_1 import (
     Schema as Schema31,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Type unions for compatibility with both OpenAPI 3.0 and 3.1
 Operation = Union[Operation30, Operation31]
@@ -76,7 +76,7 @@ class Property(BaseModel):
 class Model(BaseModel):
     file_name: str
     content: str
-    openapi_object: Schema
+    openapi_object: Optional[Schema] = None
     properties: List[Property] = []
 
 
@@ -96,6 +96,6 @@ class APIConfig(BaseModel):
 
 
 class ConversionResult(BaseModel):
-    models: List[Model]
-    clients: List[Model] = []
-    exceptions: Optional[Model] = None
+    models: List[Model] = Field(default_factory=list)
+    clients: List[Model] = Field(default_factory=list)
+    exceptions: List[Model] = Field(default_factory=list)

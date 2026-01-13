@@ -5,11 +5,14 @@ from openapi_pydantic.v3.v3_1 import OpenAPI as OpenAPI31
 
 from ab_openapi_python_generator.common import PydanticVersion
 from ab_openapi_python_generator.language_converters.python import common
-from ab_openapi_python_generator.language_converters.python.model_generator import (
-    generate_models,
-)
 from ab_openapi_python_generator.language_converters.python.client_generator import (
     generate_clients,
+)
+from ab_openapi_python_generator.language_converters.python.exception_generator import (
+    generate_exceptions,
+)
+from ab_openapi_python_generator.language_converters.python.model_generator import (
+    generate_models,
 )
 from ab_openapi_python_generator.models import ConversionResult, LibraryConfig
 
@@ -38,14 +41,12 @@ def generator(
         models = []
 
     if data.paths is not None:
-        clients, exceptions = generate_clients(
-            data, data.paths, library_config, env_token_name, pydantic_version
-        )
+        clients = generate_clients(data, data.paths, library_config, env_token_name, pydantic_version)
     else:
-        clients, exceptions = [], None
+        clients = []
 
     return ConversionResult(
         models=models,
         clients=clients,
-        exceptions=exceptions,
+        exceptions=generate_exceptions(),
     )

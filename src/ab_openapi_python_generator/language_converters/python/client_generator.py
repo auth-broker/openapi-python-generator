@@ -1,7 +1,6 @@
 import re
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-import click
 from openapi_pydantic.v3 import (
     Operation,
     PathItem,
@@ -38,27 +37,23 @@ from openapi_pydantic.v3.v3_1 import (
 )
 from openapi_pydantic.v3.v3_1.parameter import Parameter as Parameter31
 
+from ab_openapi_python_generator.common import PydanticVersion
 from ab_openapi_python_generator.language_converters.python import common
-from ab_openapi_python_generator.language_converters.python.common import normalize_symbol
 from ab_openapi_python_generator.language_converters.python.jinja_config import (
-    create_jinja_env,
-    SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
     ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
-    EXCEPTIONS_TEMPLATE,
+    SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
+    create_jinja_env,
 )
 from ab_openapi_python_generator.language_converters.python.model_generator import (
     type_converter,
 )
 from ab_openapi_python_generator.models import (
     LibraryConfig,
+    Model,
     OpReturnType,
-    Service,
     ServiceOperation,
     TypeConversion,
-    Model,
 )
-
-from ab_openapi_python_generator.common import PydanticVersion
 
 
 # Helper functions for isinstance checks across OpenAPI versions
@@ -129,9 +124,7 @@ def generate_body_param(operation: Operation) -> Union[str, None]:
     if operation.requestBody is None:
         return None
     else:
-        if isinstance(operation.requestBody, Reference30) or isinstance(
-            operation.requestBody, Reference31
-        ):
+        if isinstance(operation.requestBody, Reference30) or isinstance(operation.requestBody, Reference31):
             return "data.dict()"
 
         if operation.requestBody.content is None:
@@ -145,9 +138,7 @@ def generate_body_param(operation: Operation) -> Union[str, None]:
         if media_type is None:
             return None  # pragma: no cover
 
-        if isinstance(
-            media_type.media_type_schema, (Reference, Reference30, Reference31)
-        ):
+        if isinstance(media_type.media_type_schema, (Reference, Reference30, Reference31)):
             return "data.dict()"
         elif hasattr(media_type.media_type_schema, "ref"):
             # Handle Reference objects from different OpenAPI versions
@@ -159,9 +150,7 @@ def generate_body_param(operation: Operation) -> Union[str, None]:
             elif schema.type == "object":
                 return "data"
             else:
-                raise Exception(
-                    f"Unsupported schema type for request body: {schema.type}"
-                )  # pragma: no cover
+                raise Exception(f"Unsupported schema type for request body: {schema.type}")  # pragma: no cover
         else:
             raise Exception(
                 f"Unsupported schema type for request body: {type(media_type.media_type_schema)}"
@@ -191,26 +180,17 @@ def generate_params(operation: Operation) -> str:
             required = False
             param_name_cleaned = common.normalize_symbol(param.name)
 
-            if isinstance(param.param_schema, Schema30) or isinstance(
-                param.param_schema, Schema31
-            ):
+            if isinstance(param.param_schema, Schema30) or isinstance(param.param_schema, Schema31):
                 converted_result = (
                     f"{param_name_cleaned} : {type_converter(param.param_schema, param.required).converted_type}"
                     + ("" if param.required else " = None")
                 )
                 required = param.required
-            elif isinstance(param.param_schema, Reference30) or isinstance(
-                param.param_schema, Reference31
-            ):
-                converted_result = (
-                    f"{param_name_cleaned} : {param.param_schema.ref.split('/')[-1] }"
-                    + (
-                        ""
-                        if isinstance(param, Reference30)
-                        or isinstance(param, Reference31)
-                        or param.required
-                        else " = None"
-                    )
+            elif isinstance(param.param_schema, Reference30) or isinstance(param.param_schema, Reference31):
+                converted_result = f"{param_name_cleaned} : {param.param_schema.ref.split('/')[-1]}" + (
+                    ""
+                    if isinstance(param, Reference30) or isinstance(param, Reference31) or param.required
+                    else " = None"
                 )
                 required = isinstance(param, Reference) or param.required
 
@@ -226,17 +206,11 @@ def generate_params(operation: Operation) -> str:
         "application/octet-stream",
     ]
 
-    if operation.requestBody is not None and not is_reference_type(
-        operation.requestBody
-    ):
+    if operation.requestBody is not None and not is_reference_type(operation.requestBody):
         # Safe access only if it's a concrete RequestBody object
         rb_content = getattr(operation.requestBody, "content", None)
-        if isinstance(rb_content, dict) and any(
-            rb_content.get(i) is not None for i in operation_request_body_types
-        ):
-            get_keyword = [
-                i for i in operation_request_body_types if rb_content.get(i)
-            ][0]
+        if isinstance(rb_content, dict) and any(rb_content.get(i) is not None for i in operation_request_body_types):
+            get_keyword = [i for i in operation_request_body_types if rb_content.get(i)][0]
             content = rb_content.get(get_keyword)
             if content is not None and hasattr(content, "media_type_schema"):
                 mts = getattr(content, "media_type_schema", None)
@@ -246,9 +220,7 @@ def generate_params(operation: Operation) -> str:
                 ):
                     params += f"{_generate_params_from_content(mts)}, "
                 else:  # pragma: no cover
-                    raise Exception(
-                        f"Unsupported media type schema for {str(operation)}: {type(mts)}"
-                    )
+                    raise Exception(f"Unsupported media type schema for {str(operation)}: {type(mts)}")
         # else: silently ignore unsupported body shapes (could extend later)
     # Replace - with _ in params
     params = params.replace("-", "_")
@@ -257,9 +229,7 @@ def generate_params(operation: Operation) -> str:
     return params + default_params
 
 
-def generate_operation_id(
-    operation: Operation, http_op: str, path_name: Optional[str] = None
-) -> str:
+def generate_operation_id(operation: Operation, http_op: str, path_name: Optional[str] = None) -> str:
     if operation.operationId is not None:
         return common.normalize_symbol(operation.operationId)
     elif path_name is not None:
@@ -270,9 +240,7 @@ def generate_operation_id(
         )  # pragma: no cover
 
 
-def _generate_params(
-    operation: Operation, param_in: Literal["query", "header"] = "query"
-):
+def _generate_params(operation: Operation, param_in: Literal["query", "header"] = "query"):
     if operation.parameters is None:
         return []
 
@@ -325,9 +293,7 @@ def generate_return_type(operation: Operation) -> OpReturnType:
         media_type_schema = create_media_type_for_reference(chosen_response)
 
     if media_type_schema is None:
-        return OpReturnType(
-            type=None, status_code=good_responses[0][0], complex_type=False
-        )
+        return OpReturnType(type=None, status_code=good_responses[0][0], complex_type=False)
 
     if is_media_type(media_type_schema):
         inner_schema = getattr(media_type_schema, "media_type_schema", None)
@@ -344,25 +310,18 @@ def generate_return_type(operation: Operation) -> OpReturnType:
             )
         elif is_schema_type(inner_schema):
             converted_result = type_converter(inner_schema, True)  # type: ignore
-            if "array" in converted_result.original_type and isinstance(
-                converted_result.import_types, list
-            ):
+            if "array" in converted_result.original_type and isinstance(converted_result.import_types, list):
                 matched = re.findall(r"List\[(.+)\]", converted_result.converted_type)
                 if len(matched) > 0:
                     list_type = matched[0]
                 else:  # pragma: no cover
-                    raise Exception(
-                        f"Unable to parse list type from {converted_result.converted_type}"
-                    )
+                    raise Exception(f"Unable to parse list type from {converted_result.converted_type}")
             else:
                 list_type = None
             return OpReturnType(
                 type=converted_result,
                 status_code=good_responses[0][0],
-                complex_type=bool(
-                    converted_result.import_types
-                    and len(converted_result.import_types) > 0
-                ),
+                complex_type=bool(converted_result.import_types and len(converted_result.import_types) > 0),
                 list_type=list_type,
             )
         else:  # pragma: no cover
@@ -391,7 +350,7 @@ def generate_clients(
     library_config: LibraryConfig,
     env_token_name: Optional[str],
     pydantic_version: PydanticVersion,
-) -> Tuple[List[Model], Optional[Model]]:
+) -> List[Model]:
     """
     Generate two client modules:
       - sync_client.py (SyncClient)
@@ -401,7 +360,9 @@ def generate_clients(
 
     service_ops: List[ServiceOperation] = []
 
-    def _generate_service_operation(op: Operation, path_obj: PathItem, path_name: str, http_operation: str, async_type: bool) -> ServiceOperation:
+    def _generate_service_operation(
+        op: Operation, path_obj: PathItem, path_name: str, http_operation: str, async_type: bool
+    ) -> ServiceOperation:
         try:
             path_level_params = []
             if hasattr(path_obj, "parameters") and path_obj.parameters is not None:
@@ -413,10 +374,7 @@ def generate_clients(
                         if isinstance(p, (Parameter30, Parameter31)):
                             existing_names.add(p.name)
                 for p in path_level_params:
-                    if (
-                        isinstance(p, (Parameter30, Parameter31))
-                        and p.name not in existing_names
-                    ):
+                    if isinstance(p, (Parameter30, Parameter31)) and p.name not in existing_names:
                         if op.parameters is None:
                             op.parameters = []  # type: ignore
                         op.parameters.append(p)  # type: ignore
@@ -487,17 +445,12 @@ def generate_clients(
         operations=[so.model_dump() for so in async_ops],
     )
 
-    exceptions_content = jinja_env.get_template(EXCEPTIONS_TEMPLATE).render()
-
     compile(sync_content, "<string>", "exec")
     compile(async_content, "<string>", "exec")
-    compile(exceptions_content, "<string>", "exec")
 
     clients: List[Model] = [
         Model(file_name="sync_client", content=sync_content, openapi_object={}, properties=[]),
         Model(file_name="async_client", content=async_content, openapi_object={}, properties=[]),
     ]
 
-    exceptions_model = Model(file_name="exceptions", content=exceptions_content, openapi_object={}, properties=[])
-
-    return clients, exceptions_model
+    return clients

@@ -48,10 +48,7 @@ def detect_openapi_version(spec_data: Dict[str, Any]) -> OpenAPIVersion:
     elif openapi_version.startswith("3.1"):
         return "3.1"
     else:
-        raise ValueError(
-            f"Unsupported OpenAPI version: {openapi_version}. "
-            f"Only OpenAPI 3.0.x and 3.1.x are supported."
-        )
+        raise ValueError(f"Unsupported OpenAPI version: {openapi_version}. Only OpenAPI 3.0.x and 3.1.x are supported.")
 
 
 def is_openapi_30(spec_data: Dict[str, Any]) -> bool:
