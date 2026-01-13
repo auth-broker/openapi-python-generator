@@ -90,6 +90,32 @@ def is_schema_type(obj: Any) -> bool:
     return isinstance(obj, (Schema30, Schema31))
 
 
+def operation_is_sse(op: Operation) -> bool:
+    """Detect if an Operation advertises Server-Sent-Events (text/event-stream) in any 2xx response."""
+    if not getattr(op, "responses", None):
+        return False
+
+    for status_code, resp in op.responses.items():
+        try:
+            if not str(status_code).startswith("2"):
+                continue
+        except Exception:
+            continue
+
+        # Concrete Response object
+        if is_response_type(resp):
+            content = getattr(resp, "content", None)
+            if isinstance(content, dict) and "text/event-stream" in content:
+                return True
+
+        # Reference responses could be resolved externally; skip for now
+        if is_reference_type(resp):
+            # If you need supporting $ref'ed SSE responses, resolve via components
+            pass
+
+    return False
+
+
 HTTP_OPERATIONS = ["get", "post", "put", "delete", "options", "head", "patch", "trace"]
 
 
@@ -279,7 +305,16 @@ def generate_return_type(operation: Operation) -> OpReturnType:
     if is_response_type(chosen_response):
         # It's a Response type, access content safely
         if hasattr(chosen_response, "content") and chosen_response.content is not None:  # type: ignore
-            media_type_schema = chosen_response.content.get("application/json")  # type: ignore
+            content = chosen_response.content  # type: ignore
+            # Prefer application/json, then text/event-stream, then first available
+            if isinstance(content, dict):
+                media_type_schema = (
+                    content.get("application/json")
+                    or content.get("text/event-stream")
+                    or next(iter(content.values()), None)
+                )
+            else:
+                media_type_schema = None
     elif is_reference_type(chosen_response):
         media_type_schema = create_media_type_for_reference(chosen_response)
 
@@ -412,6 +447,7 @@ def generate_services(
             body_param=body_param,
             path_name=path_name,
             method=http_operation,
+            is_sse=operation_is_sse(op),
             use_orjson=common.get_use_orjson(),
         )
 
