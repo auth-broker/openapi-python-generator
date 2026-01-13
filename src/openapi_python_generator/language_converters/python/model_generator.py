@@ -69,8 +69,10 @@ def _schema_is_union(schema: Schema) -> bool:
 
 
 def _alias_name_for_property(prop_name: str) -> str:
-    # "token_issuer" -> "TokenIssuer"
-    return common.normalize_symbol(prop_name)
+    # token_issuer -> TokenIssuer, foo-bar -> FooBar, etc.
+    parts = re.split(r"[^a-zA-Z0-9]+", prop_name.strip())
+    parts = [p for p in parts if p]
+    return "".join(p[:1].upper() + p[1:] for p in parts)
 
 
 def _dedupe_imports(imports: Optional[List[str]]) -> List[str]:
