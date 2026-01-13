@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import itertools
-from typing import List, Optional, Union
+import re
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import click
 from openapi_pydantic.v3.v3_0 import (
@@ -27,14 +30,308 @@ from openapi_python_generator.language_converters.python.jinja_config import (
     ENUM_TEMPLATE,
     MODELS_TEMPLATE,
     MODELS_TEMPLATE_PYDANTIC_V2,
+    ALIAS_UNION_TEMPLATE,
+    DISCRIMINATOR_ENUM_TEMPLATE,
     create_jinja_env,
 )
+from dataclasses import dataclass
+
 from openapi_python_generator.models import Model, Property, TypeConversion
 
 # Type aliases for compatibility
 Schema = Union[Schema30, Schema31]
 Reference = Union[Reference30, Reference31]
 Components = Union[Components30, Components31]
+
+
+# Map of wrapper component name -> TypeConversion to use instead of generating wrapper module
+_REFERENCE_TYPE_OVERRIDES: dict[str, TypeConversion] = {}
+
+
+def _is_null_schema(s: object) -> bool:
+    t = getattr(s, "type", None)
+    return t == "null" or str(t) == "DataType.NULL"
+
+
+def _build_nullable_wrapper_overrides(components: Components) -> dict[str, TypeConversion]:
+    """
+    Collapse component schemas shaped like:
+      X = anyOf/oneOf: [ $ref: Y, {type: null} ]
+    into an override so refs to X become Optional[Y] without generating X.py.
+    """
+    overrides: dict[str, TypeConversion] = {}
+    schemas = getattr(components, "schemas", None)
+    if not schemas:
+        return overrides
+
+    for schema_name, schema in schemas.items():
+        # Only non-discriminator wrappers
+        if getattr(schema, "discriminator", None) is not None:
+            continue
+
+        variants = getattr(schema, "anyOf", None) or getattr(schema, "oneOf", None)
+        if not variants or len(variants) != 2:
+            continue
+
+        ref = next((v for v in variants if isinstance(v, (Reference30, Reference31))), None)
+        nul = next((v for v in variants if isinstance(v, (Schema30, Schema31)) and _is_null_schema(v)), None)
+        if ref is None or nul is None:
+            continue
+
+        wrapper_name = common.normalize_symbol(schema_name)
+        target_model = common.normalize_symbol(ref.ref.split("/")[-1])
+
+        overrides[wrapper_name] = TypeConversion(
+            original_type=ref.ref,
+            converted_type=f"Optional[{target_model}]",
+            import_types=[f"from .{target_model} import {target_model}"],
+        )
+
+    return overrides
+
+
+def _get_discriminator_key(schema: Schema) -> Optional[str]:
+    """
+    Return discriminator property name if present on the schema.
+    openapi-pydantic v3.x uses `schema.discriminator.propertyName` (common),
+    but we defensively check a couple of variants.
+    """
+    disc = getattr(schema, "discriminator", None)
+    if disc is None:
+        return None
+
+    # Most common: propertyName
+    key = getattr(disc, "propertyName", None)
+    if key:
+        return str(key)
+
+    # Defensive fallbacks
+    key = getattr(disc, "property_name", None)
+    if key:
+        return str(key)
+
+    return None
+
+
+def _schema_is_union(schema: Schema) -> bool:
+    used = schema.oneOf if schema.oneOf is not None else schema.anyOf
+    return used is not None and len(used) > 0
+
+
+def _alias_name_for_property(prop_name: str) -> str:
+    # token_issuer -> TokenIssuer, foo-bar -> FooBar, etc.
+    parts = re.split(r"[^a-zA-Z0-9]+", prop_name.strip())
+    parts = [p for p in parts if p]
+    return "".join(p[:1].upper() + p[1:] for p in parts)
+
+
+def _dedupe_imports(imports: Optional[List[str]]) -> List[str]:
+    if not imports:
+        return []
+    seen: Set[str] = set()
+    out: List[str] = []
+    for imp in imports:
+        if imp and imp not in seen:
+            seen.add(imp)
+            out.append(imp)
+    return out
+
+
+def _render_union_alias_module(
+    *,
+    jinja_env,
+    alias_name: str,
+    union_type: str,
+    discriminator_key: Optional[str],
+    member_imports: List[str],
+) -> str:
+    return jinja_env.get_template(ALIAS_UNION_TEMPLATE).render(
+        alias_name=alias_name,
+        union_type=union_type,
+        discriminator_key=discriminator_key,
+        member_imports=_dedupe_imports(member_imports),
+    )
+
+
+@dataclass(frozen=True)
+class DiscriminatorBinding:
+    enum_name: str
+    enum_member: str
+    discriminator_key: str
+
+
+def _enum_member_name(value: str) -> str:
+    # Make a safe enum member name, e.g. "pkce" -> "PKCE", "oauth2" -> "OAUTH2"
+    return common.normalize_symbol(str(value)).upper()
+
+
+def _pascal_discriminator(discriminator_key: str) -> str:
+    """
+    Convert a discriminator property name (e.g. "type", "kind", "event_type")
+    into a PascalCase suffix ("Type", "Kind", "EventType").
+    """
+    sym = common.normalize_symbol(discriminator_key)
+    parts = [p for p in sym.replace("-", "_").split("_") if p]
+    return "".join(p[:1].upper() + p[1:] for p in parts) or "Discriminator"
+
+
+def _pascal_schema_name(schema_name: str) -> str:
+    """
+    Convert a schema name like "token_issuer" into "TokenIssuer" for generated type/enum names.
+    (We don't want enum class names like `token_issuerType`.)
+    """
+    sym = common.normalize_symbol(schema_name)
+    parts = [p for p in sym.replace("-", "_").split("_") if p]
+    return "".join(p[:1].upper() + p[1:] for p in parts) or "Schema"
+
+
+def _invert_discriminator_mapping(mapping: Optional[dict]) -> Dict[str, str]:
+    """
+    discriminator.mapping is usually { "<disc_value>": "<$ref>" }
+    Return { "<$ref>": "<disc_value>" }
+    """
+    if not mapping:
+        return {}
+    inv: Dict[str, str] = {}
+    for k, v in mapping.items():
+        if isinstance(v, str):
+            inv[v] = str(k)
+    return inv
+
+
+def _discover_discriminated_unions(
+    components: Components,
+) -> Tuple[Dict[str, DiscriminatorBinding], Dict[str, List[Tuple[str, str]]]]:
+    """
+    Discover discriminated unions in BOTH:
+      - top-level component schemas (schema.discriminator + schema.oneOf)
+      - inline/property schemas (property_schema.discriminator + property_schema.oneOf)
+
+    Returns:
+      - bindings: { "<MemberModelName>": DiscriminatorBinding(...) }
+      - enum_members_by_name: { "<EnumName>": [(MEMBER_NAME, member_value), ...] }
+    """
+    bindings: Dict[str, DiscriminatorBinding] = {}
+    enum_members_by_name: Dict[str, List[Tuple[str, str]]] = {}
+
+    if not getattr(components, "schemas", None):
+        return bindings, enum_members_by_name
+
+    def register_union(alias_name: str, union_schema: Schema) -> None:
+        disc = getattr(union_schema, "discriminator", None)
+        one_of = getattr(union_schema, "oneOf", None)
+        if disc is None or not one_of:
+            return
+
+        # openapi_pydantic uses propertyName, but be defensive
+        discriminator_key = getattr(disc, "propertyName", None) or getattr(disc, "property_name", None)
+        if not discriminator_key:
+            return
+
+        enum_name = f"{_pascal_schema_name(alias_name)}{_pascal_discriminator(discriminator_key)}"
+        ref_to_value = _invert_discriminator_mapping(getattr(disc, "mapping", None))
+
+        members: List[Tuple[str, str]] = []
+        for sub in one_of:
+            if not isinstance(sub, (Reference30, Reference31)):
+                continue
+            ref = sub.ref
+            member_model = common.normalize_symbol(ref.split("/")[-1])
+            disc_value = ref_to_value.get(ref) or member_model
+
+            member_name = _enum_member_name(disc_value)
+            members.append((member_name, disc_value))
+
+            bindings[member_model] = DiscriminatorBinding(
+                enum_name=enum_name,
+                enum_member=member_name,
+                discriminator_key=discriminator_key,
+            )
+
+        if members:
+            # de-dupe by enum member name
+            seen = set()
+            deduped: List[Tuple[str, str]] = []
+            for mn, mv in members:
+                if mn in seen:
+                    continue
+                seen.add(mn)
+                deduped.append((mn, mv))
+            enum_members_by_name[enum_name] = deduped
+
+    # 1) top-level discriminated unions
+    for schema_name, schema in components.schemas.items():
+        disc = getattr(schema, "discriminator", None)
+        one_of = getattr(schema, "oneOf", None)
+        if disc is not None and one_of:
+            register_union(schema_name, schema)
+
+    # 2) inline/property discriminated unions
+    for parent_name, parent_schema in components.schemas.items():
+        props = getattr(parent_schema, "properties", None) or {}
+        for prop_name, prop_schema in props.items():
+            disc = getattr(prop_schema, "discriminator", None)
+            one_of = getattr(prop_schema, "oneOf", None)
+            if disc is not None and one_of:
+                # alias name should be based on the property name (e.g. oauth2_client -> OAuth2Client)
+                register_union(prop_name, prop_schema)
+
+    return bindings, enum_members_by_name
+
+
+def _build_discriminator_bindings(components: Components) -> Dict[str, DiscriminatorBinding]:
+    """
+    Scan components.schemas for discriminator-based oneOf schemas and return:
+      { "<MemberModelName>": DiscriminatorBinding(...) }
+
+    We use:
+      - discriminator.propertyName as the key
+      - discriminator.mapping (preferred) to get per-member discriminator values
+      - fallback: schema name when mapping not present
+    """
+    bindings: Dict[str, DiscriminatorBinding] = {}
+
+    if not getattr(components, "schemas", None):
+        return bindings
+
+    for schema_name, schema in components.schemas.items():
+        disc = getattr(schema, "discriminator", None)
+        one_of = getattr(schema, "oneOf", None)
+
+        if disc is None or not one_of:
+            continue
+
+        discriminator_key = getattr(disc, "propertyName", None) or getattr(disc, "property_name", None)
+        if discriminator_key is None:
+            continue
+
+        enum_name = (
+            f"{_pascal_schema_name(schema_name)}"
+            f"{_pascal_discriminator(discriminator_key)}"
+        )
+
+        mapping = getattr(disc, "mapping", None) or {}
+        # invert mapping to get $ref -> value
+        ref_to_value: Dict[str, str] = {ref: value for value, ref in mapping.items()}
+
+        for sub in one_of:
+            if not (isinstance(sub, Reference30) or isinstance(sub, Reference31)):
+                continue
+
+            ref = sub.ref
+            member_model = common.normalize_symbol(ref.split("/")[-1])
+
+            disc_value = ref_to_value.get(ref)
+            if disc_value is None:
+                disc_value = member_model
+
+            bindings[member_model] = DiscriminatorBinding(
+                enum_name=enum_name,
+                enum_member=_enum_member_name(disc_value),
+                discriminator_key=discriminator_key,
+            )
+
+    return bindings
 
 
 def type_converter(  # noqa: C901
@@ -52,6 +349,15 @@ def type_converter(  # noqa: C901
     # Handle Reference objects by converting them to type references
     if isinstance(schema, Reference30) or isinstance(schema, Reference31):
         import_type = common.normalize_symbol(schema.ref.split("/")[-1])
+        # Nullable-wrapper collapse: ref to X may be overridden to Optional[Y]
+        override = _REFERENCE_TYPE_OVERRIDES.get(import_type)
+        if override is not None:
+            return TypeConversion(
+                original_type=schema.ref,
+                converted_type=override.converted_type,
+                import_types=override.import_types,
+            )
+
         if required:
             converted_type = import_type
         else:
@@ -396,12 +702,10 @@ def generate_models(
 ) -> List[Model]:
     """
     Receives components from an OpenAPI 3.0+ specification and generates the models from it.
-    It does so, by iterating over the components.schemas dictionary. For each schema, it checks if
-    it is a normal schema (i.e. simple type like string, integer, etc.), a reference to another schema, or
-    an array of types/references. It then computes pydantic models from it using jinja2
-    :param components: The components from an OpenAPI 3.0+ specification.
-    :param pydantic_version: The version of pydantic to use.
-    :return: A list of models.
+    Additionally:
+      - Detects unions / discriminated unions in property schemas (oneOf/anyOf)
+      - Emits a named alias module (e.g. TokenIssuer.py)
+      - Rewrites the property type to use that alias (instead of Union[...])
     """
     models: List[Model] = []
 
@@ -409,8 +713,26 @@ def generate_models(
         return models
 
     jinja_env = create_jinja_env()
+    # Build nullable-wrapper overrides so refs to simple wrappers (X = anyOf[$ref Y, null])
+    # are collapsed to Optional[Y] and we avoid generating X.py (which can collide on Windows).
+    global _REFERENCE_TYPE_OVERRIDES
+    _REFERENCE_TYPE_OVERRIDES = _build_nullable_wrapper_overrides(components)
+
+    discriminator_bindings, enum_members_by_name = _discover_discriminated_unions(components)
+
+    # Track alias modules so we only create each once
+    alias_models_by_name: Dict[str, Model] = {}
+
     for schema_name, schema_or_reference in components.schemas.items():
         name = common.normalize_symbol(schema_name)
+
+        # Don't generate standalone modules for nullable wrapper components
+        if name in _REFERENCE_TYPE_OVERRIDES:
+            continue
+
+        # --------------------------
+        # Enums
+        # --------------------------
         if schema_or_reference.enum is not None:
             value_dict = schema_or_reference.model_dump()
             value_dict["enum"] = [
@@ -432,21 +754,95 @@ def generate_models(
 
             continue  # pragma: no cover
 
-        properties = []
+        # --------------------------
+        # Normal models
+        # --------------------------
+        properties: List[Property] = []
         property_iterator = (
             schema_or_reference.properties.items()
             if schema_or_reference.properties is not None
             else {}
         )
-        for prop_name, property in property_iterator:
-            if isinstance(property, Reference30) or isinstance(property, Reference31):
+
+        for prop_name, prop_schema in property_iterator:
+            # Reference property
+            if isinstance(prop_schema, Reference30) or isinstance(prop_schema, Reference31):
                 conv_property = _generate_property_from_reference(
-                    name, prop_name, property, schema_or_reference
+                    name, prop_name, prop_schema, schema_or_reference
                 )
-            else:
-                conv_property = _generate_property_from_schema(
-                    name, prop_name, property, schema_or_reference
+                properties.append(conv_property)
+                continue
+
+            # Schema property
+            conv_property = _generate_property_from_schema(
+                name, prop_name, prop_schema, schema_or_reference
+            )
+
+            # If this model is a discriminated union member, and this property
+            # is the discriminator key, make it a Literal[...] with a default
+            binding = discriminator_bindings.get(name)
+            if binding and common.normalize_symbol(conv_property.name) == common.normalize_symbol(binding.discriminator_key):
+                conv_property.required = True
+                conv_property.default = f"{binding.enum_name}.{binding.enum_member}"
+
+                extra_imports = [
+                    "from typing import Literal",
+                    f"from .{binding.enum_name} import {binding.enum_name}",
+                ]
+
+                conv_property.type = TypeConversion(
+                    original_type=conv_property.type.original_type,
+                    converted_type=f"Literal[{binding.enum_name}.{binding.enum_member}]",
+                    import_types=extra_imports,
                 )
+
+            # -----------------------------------------
+            # NEW: union / discriminated union factoring
+            # -----------------------------------------
+            if isinstance(prop_schema, (Schema30, Schema31)) and _schema_is_union(prop_schema):
+                alias_name = _alias_name_for_property(prop_name)
+                discriminator_key = _get_discriminator_key(prop_schema)
+
+                # Only generate standalone alias modules for DISCRIMINATED unions.
+                # Plain unions (including nullable wrappers) are left inline.
+                if discriminator_key is not None:
+                    # Build the union type and gather imports from members.
+                    # Important: we want a NON-optional union for the alias definition.
+                    union_conv = type_converter(prop_schema, required=True, model_name=name)
+                    union_type_str = union_conv.converted_type  # e.g. Union[A,B,C]
+                    member_imports = union_conv.import_types or []
+
+                    # Create alias module once
+                    if alias_name not in alias_models_by_name:
+                        alias_content = _render_union_alias_module(
+                            jinja_env=jinja_env,
+                            alias_name=alias_name,
+                            union_type=union_type_str,
+                            discriminator_key=discriminator_key,
+                            member_imports=member_imports,
+                        )
+
+                        # Validate alias module compiles
+                        try:
+                            compile(alias_content, "<string>", "exec")
+                        except SyntaxError as e:  # pragma: no cover
+                            click.echo(f"Error in union alias {alias_name}: {e}")  # pragma: no cover
+
+                        alias_models_by_name[alias_name] = Model(
+                            file_name=alias_name,
+                            content=alias_content,
+                            openapi_object=prop_schema,
+                            properties=[],
+                        )
+
+                    # Rewrite property type to use alias
+                    rewritten_type = alias_name if conv_property.required else f"Optional[{alias_name}]"
+                    conv_property.type = TypeConversion(
+                        original_type=conv_property.type.original_type,
+                        converted_type=rewritten_type,
+                        import_types=[f"from .{alias_name} import {alias_name}"],
+                    )
+
             properties.append(conv_property)
 
         template_name = (
@@ -472,5 +868,29 @@ def generate_models(
                 properties=properties,
             )
         )
+
+    # Ensure enum modules for discriminators are included
+    enum_models: List[Model] = []
+    for enum_name, members in enum_members_by_name.items():
+        enum_content = jinja_env.get_template(DISCRIMINATOR_ENUM_TEMPLATE).render(
+            enum_name=enum_name, members=members
+        )
+        try:
+            compile(enum_content, "<string>", "exec")
+        except SyntaxError as e:  # pragma: no cover
+            click.echo(f"Error in enum {enum_name}: {e}")  # pragma: no cover
+
+        # Model.openapi_object is required (non-Optional). Enum modules don't map to a real schema,
+        # so attach a tiny placeholder schema to satisfy validation.
+        placeholder_schema = Schema31() if isinstance(components, Components31) else Schema30()
+
+        enum_models.append(
+            Model(file_name=enum_name, content=enum_content, openapi_object=placeholder_schema, properties=[])
+        )
+
+    # Ensure alias modules are included in output
+    models.extend(alias_models_by_name.values())
+    # Append enum modules last
+    models.extend(enum_models)
 
     return models

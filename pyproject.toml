@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "openapi-python-generator"
-version = "v2.1.2"
+name = "ab-openapi-python-generator"
+version = "v2.1.3"
 description = "Openapi Python Generator"
-authors = ["Marco Müllner <muellnermarco@gmail.com>"]
+authors = ["Marco Müllner <muellnermarco@gmail.com>", "Matt Coulter <mattcoul7@gmail.com>"]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/MarcoMuellner/openapi-python-generator"
-repository = "https://github.com/MarcoMuellner/openapi-python-generator"
+homepage = "https://github.com/auth-broker/openapi-python-generator"
+repository = "https://github.com/auth-broker/openapi-python-generator"
 documentation = "https://openapi-python-generator.readthedocs.io"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -14,7 +14,7 @@ classifiers = [
 keywords = ["OpenAPI", "Generator", "Python", "async"]
 
 [tool.poetry.urls]
-Changelog = "https://github.com/MarcoMuellner/openapi-python-generator/releases"
+Changelog = "https://github.com/auth-broker/openapi-python-generator/releases"
 
 [tool.poetry.dependencies]
 python = "^3.9"
