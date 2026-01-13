@@ -98,4 +98,5 @@ class APIConfig(BaseModel):
 class ConversionResult(BaseModel):
     models: List[Model]
     services: List[Service]
-    api_config: APIConfig
+    api_config: Optional[APIConfig] = None
+    clients: List[Model] = []

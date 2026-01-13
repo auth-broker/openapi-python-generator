@@ -1,0 +1,80 @@
+{% if env_token_name is not none %}import os{% endif %}
+
+from typing import Any, Dict, Optional, Union
+
+import httpx
+from pydantic import BaseModel
+
+from .models import *
+{% set _base_path = servers[0].url if servers|length > 0 else "/" %}
+from .exceptions import HTTPException
+
+
+class AsyncClient(BaseModel):
+    model_config = {"validate_assignment": True}
+
+    base_path: str = "{{ _base_path }}"
+    verify: Union[bool, str] = True
+{% if env_token_name is none %}
+    access_token: Optional[str] = None
+{% endif %}
+
+    def get_access_token(self) -> Optional[str]:
+{% if env_token_name is not none %}
+        try:
+            return os.environ["{{ env_token_name }}"]
+        except KeyError:
+            return None
+{% else %}
+        return self.access_token
+{% endif %}
+
+    def set_access_token(self, value: str) -> None:
+{% if env_token_name is not none %}
+        raise Exception(
+            "This client was generated with an environment variable for the access token. "
+            "Please set '{{ env_token_name }}'."
+        )
+{% else %}
+        self.access_token = value
+{% endif %}
+
+{% for op in operations %}
+    async def {{ op.operation_id }}(self{% if op.params %}, {{ op.params }}{% endif %}) -> Any:
+        base_path = self.base_path
+        path = f"{{ op.path_name }}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer { self.get_access_token() }",
+        }
+
+        query_params: Dict[str, Any] = {
+{% for qp in op.query_params %}
+            {{ qp }},
+{% endfor %}
+        }
+        query_params = {k: v for (k, v) in query_params.items() if v is not None}
+
+        async with httpx.AsyncClient(base_url=base_path, verify=self.verify) as client:
+            response = await client.request(
+                "{{ op.method }}",
+                httpx.URL(path),
+                headers=headers,
+                params=query_params,
+{% if op.body_param %}
+                json={{ op.body_param }},
+{% endif %}
+            )
+
+        if response.status_code != {{ op.return_type.status_code }}:
+            raise HTTPException(
+                response.status_code,
+                f"{{ op.operation_id }} failed with status code: {response.status_code}",
+            )
+
+        body = None if {{ op.return_type.status_code }} == 204 else response.json()
+        return body
+
+{% endfor %}

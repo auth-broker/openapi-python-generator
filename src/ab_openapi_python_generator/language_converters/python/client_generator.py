@@ -42,6 +42,9 @@ from ab_openapi_python_generator.language_converters.python import common
 from ab_openapi_python_generator.language_converters.python.common import normalize_symbol
 from ab_openapi_python_generator.language_converters.python.jinja_config import (
     create_jinja_env,
+    SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
+    ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
+    EXCEPTIONS_TEMPLATE,
 )
 from ab_openapi_python_generator.language_converters.python.model_generator import (
     type_converter,
@@ -52,7 +55,10 @@ from ab_openapi_python_generator.models import (
     Service,
     ServiceOperation,
     TypeConversion,
+    Model,
 )
+
+from ab_openapi_python_generator.common import PydanticVersion
 
 
 # Helper functions for isinstance checks across OpenAPI versions
@@ -371,29 +377,31 @@ def generate_return_type(operation: Operation) -> OpReturnType:
         raise Exception("Unknown media type schema type")  # pragma: no cover
 
 
-def generate_services(
-    paths: Dict[str, PathItem], library_config: LibraryConfig
-) -> List[Service]:
+def generate_clients(
+    openapi: Any,
+    paths: Dict[str, PathItem],
+    library_config: LibraryConfig,
+    env_token_name: Optional[str],
+    pydantic_version: PydanticVersion,
+) -> List[Model]:
     """
-    Generates services from a paths object.
-    :param paths: paths object to be converted
-    :return: List of services
+    Generate two client modules:
+      - sync_client.py (SyncClient)
+      - async_client.py (AsyncClient)
     """
     jinja_env = create_jinja_env()
 
-    def generate_service_operation(
-        op: Operation, path_name: str, async_type: bool
-    ) -> ServiceOperation:
-        # Merge path-level parameters (always required by spec) into the
-        # operation-level parameters so they get turned into function args.
+    service_ops: List[ServiceOperation] = []
+
+    def _generate_service_operation(op: Operation, path_obj: PathItem, path_name: str, http_operation: str, async_type: bool) -> ServiceOperation:
         try:
             path_level_params = []
-            if hasattr(path, "parameters") and path.parameters is not None:  # type: ignore
-                path_level_params = [p for p in path.parameters if p is not None]  # type: ignore
+            if hasattr(path_obj, "parameters") and path_obj.parameters is not None:
+                path_level_params = [p for p in path_obj.parameters if p is not None]
             if path_level_params:
                 existing_names = set()
                 if op.parameters is not None:
-                    for p in op.parameters:  # type: ignore
+                    for p in op.parameters:
                         if isinstance(p, (Parameter30, Parameter31)):
                             existing_names.add(p.name)
                 for p in path_level_params:
@@ -404,30 +412,20 @@ def generate_services(
                         if op.parameters is None:
                             op.parameters = []  # type: ignore
                         op.parameters.append(p)  # type: ignore
-        except Exception:  # pragma: no cover
-            print(
-                f"Error merging path-level parameters for {path_name}"
-            )  # pragma: no cover
+        except Exception:
             pass
 
         params = generate_params(op)
-        # Fallback: ensure all {placeholders} in path are present as function params
         try:
-            placeholder_names = [
-                m.group(1) for m in re.finditer(r"\{([^}/]+)\}", path_name)
-            ]
-            existing_param_names = {
-                p.split(":")[0].strip() for p in params.split(",") if ":" in p
-            }
+            placeholder_names = [m.group(1) for m in re.finditer(r"\{([^}/]+)\}", path_name)]
+            existing_param_names = {p.split(":")[0].strip() for p in params.split(",") if ":" in p}
             for ph in placeholder_names:
                 norm_ph = common.normalize_symbol(ph)
                 if norm_ph not in existing_param_names and norm_ph:
                     params = f"{norm_ph}: Any, " + params
-        except Exception:  # pragma: no cover
-            print(
-                f"Error ensuring path placeholders in params for {path_name}"
-            )  # pragma: no cover
+        except Exception:
             pass
+
         operation_id = generate_operation_id(op, http_operation, path_name)
         query_params = generate_query_params(op)
         header_params = generate_header_params(op)
@@ -441,7 +439,7 @@ def generate_services(
             header_params=header_params,
             return_type=return_type,
             operation=op,
-            pathItem=path,
+            pathItem=path_obj,
             content="",
             async_client=async_type,
             body_param=body_param,
@@ -451,90 +449,44 @@ def generate_services(
             use_orjson=common.get_use_orjson(),
         )
 
-        so.content = jinja_env.get_template(library_config.template_name).render(
-            **so.model_dump()
-        )
-
-        if op.tags is not None and len(op.tags) > 0:
-            so.tag = normalize_symbol(op.tags[0])
-
-        try:
-            compile(so.content, "<string>", "exec")
-        except SyntaxError as e:  # pragma: no cover
-            click.echo(f"Error in service {so.operation_id}: {e}")  # pragma: no cover
-
         return so
 
-    services = []
-    service_ops = []
     for path_name, path in paths.items():
         clean_path_name = clean_up_path_name(path_name)
         for http_operation in HTTP_OPERATIONS:
-            op = path.__getattribute__(http_operation)
+            op = getattr(path, http_operation)
             if op is None:
                 continue
 
             if library_config.include_sync:
-                sync_so = generate_service_operation(op, clean_path_name, False)
-                service_ops.append(sync_so)
-
+                service_ops.append(_generate_service_operation(op, path, clean_path_name, http_operation, False))
             if library_config.include_async:
-                async_so = generate_service_operation(op, clean_path_name, True)
-                service_ops.append(async_so)
+                service_ops.append(_generate_service_operation(op, path, clean_path_name, http_operation, True))
 
-    # Ensure every operation has a tag; fallback to "default" for untagged operations
-    for so in service_ops:
-        if not so.tag:
-            so.tag = "default"
+    sync_ops = [so for so in service_ops if not so.async_client]
+    async_ops = [so for so in service_ops if so.async_client]
 
-    tags = list({so.tag for so in service_ops})
+    openapi_dump = openapi.model_dump() if hasattr(openapi, "model_dump") else {}
 
-    for tag in tags:
-        services.append(
-            Service(
-                file_name=f"{tag}_service",
-                operations=[
-                    so for so in service_ops if so.tag == tag and not so.async_client
-                ],
-                content="\n".join(
-                    [
-                        so.content
-                        for so in service_ops
-                        if so.tag == tag and not so.async_client
-                    ]
-                ),
-                async_client=False,
-                library_import=library_config.library_name,
-                use_orjson=common.get_use_orjson(),
-            )
-        )
+    sync_content = jinja_env.get_template(SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2).render(
+        **openapi_dump,
+        env_token_name=env_token_name,
+        operations=[so.model_dump() for so in sync_ops],
+    )
+    async_content = jinja_env.get_template(ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2).render(
+        **openapi_dump,
+        env_token_name=env_token_name,
+        operations=[so.model_dump() for so in async_ops],
+    )
 
-    for tag in tags:
-        services.append(
-            Service(
-                file_name=f"async_{tag}_service",
-                operations=[
-                    so for so in service_ops if so.tag == tag and so.async_client
-                ],
-                content="\n".join(
-                    [
-                        so.content
-                        for so in service_ops
-                        if so.tag == tag and so.async_client
-                    ]
-                ),
-                async_client=True,
-                library_import=library_config.library_name,
-                use_orjson=common.get_use_orjson(),
-            )
-        )
+    exceptions_content = jinja_env.get_template(EXCEPTIONS_TEMPLATE).render()
 
-    return services
+    compile(sync_content, "<string>", "exec")
+    compile(async_content, "<string>", "exec")
+    compile(exceptions_content, "<string>", "exec")
 
-
-def clean_up_path_name(path_name: str) -> str:
-    # Clean up path name: only replace dashes inside curly brackets for f-string compatibility, keep other dashes
-    def _replace_bracket_dashes(match):
-        return "{" + match.group(1).replace("-", "_") + "}"
-
-    return re.sub(r"\{([^}/]+)\}", _replace_bracket_dashes, path_name)
+    return [
+        Model(file_name="exceptions", content=exceptions_content, openapi_object={}, properties=[]),
+        Model(file_name="sync_client", content=sync_content, openapi_object={}, properties=[]),
+        Model(file_name="async_client", content=async_content, openapi_object={}, properties=[]),
+    ]

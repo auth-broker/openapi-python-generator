@@ -13,6 +13,9 @@ API_CONFIG_TEMPLATE = "apiconfig.jinja2"
 API_CONFIG_TEMPLATE_PYDANTIC_V2 = "apiconfig_pydantic_2.jinja2"
 ALIAS_UNION_TEMPLATE = "alias_union.jinja2"
 DISCRIMINATOR_ENUM_TEMPLATE = "discriminator_enum.jinja2"
+SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2 = "sync_client_httpx_pydantic_2.jinja2"
+ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2 = "async_client_httpx_pydantic_2.jinja2"
+EXCEPTIONS_TEMPLATE = "exceptions.jinja2"
 TEMPLATE_PATH = Path(__file__).parent / "templates"
 
 

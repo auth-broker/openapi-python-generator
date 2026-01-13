@@ -183,15 +183,34 @@ def write_data(
     # Create services.__init__.py file containing imports to all services.
     write_code(services_path / "__init__.py", "", formatter)
 
-    # Write the api_config.py file.
-    write_code(Path(output) / "api_config.py", data.api_config.content, formatter)
+    # ----------------------------
+    # Write top-level modules
+    # (e.g. sync_client.py, async_client.py, exceptions.py, api_config.py if still used)
+    # ----------------------------
+    top_level_exports: List[str] = []
 
-    # Write the __init__.py file.
-    write_code(
-        Path(output) / "__init__.py",
-        "from .models import *\nfrom .services import *\nfrom .api_config import *",
-        formatter,
-    )
+    # New-style: generated modules (clients/exceptions/etc.)
+    generated_modules = getattr(data, "clients", None)
+    if generated_modules:
+        for m in generated_modules:
+            write_code(Path(output) / f"{m.file_name}.py", m.content, formatter)
+            top_level_exports.append(m.file_name)
+
+    # Backwards-compatible: api_config.py (only if present)
+    if getattr(data, "api_config", None) is not None:
+        write_code(Path(output) / "api_config.py", data.api_config.content, formatter)
+        top_level_exports.append("api_config")
+
+    # Write the package __init__.py
+    init_lines: List[str] = []
+    init_lines.append("from .models import *")
+    # Keep services export if you still generate services (harmless even if services/__init__.py is empty)
+    init_lines.append("from .services import *")
+    # Export generated top-level modules (sync_client/async_client/exceptions/etc.)
+    for mod in top_level_exports:
+        init_lines.append(f"from .{mod} import *")
+
+    write_code(Path(output) / "__init__.py", "\n".join(init_lines) + "\n", formatter)
 
 
 def generate_data(
