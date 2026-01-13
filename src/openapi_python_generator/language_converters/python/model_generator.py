@@ -30,6 +30,7 @@ from openapi_python_generator.language_converters.python.jinja_config import (
     ENUM_TEMPLATE,
     MODELS_TEMPLATE,
     MODELS_TEMPLATE_PYDANTIC_V2,
+    ALIAS_UNION_TEMPLATE,
     create_jinja_env,
 )
 from openapi_python_generator.models import Model, Property, TypeConversion
@@ -88,41 +89,19 @@ def _dedupe_imports(imports: Optional[List[str]]) -> List[str]:
 
 
 def _render_union_alias_module(
+    *,
+    jinja_env,
     alias_name: str,
     union_type: str,
     discriminator_key: Optional[str],
     member_imports: List[str],
 ) -> str:
-    """
-    Create a standalone python module that defines a named alias for a Union or
-    discriminated union.
-
-    Python 3.9 compatible (no `type X = ...` syntax).
-    """
-    lines: List[str] = []
-
-    # We want *minimal* imports so Black is happy and the module is standalone.
-    # Use Annotated only for discriminated unions.
-    if discriminator_key:
-        lines.append("from typing import Annotated, Union")
-        lines.append("from pydantic import Field")
-    else:
-        lines.append("from typing import Union")
-
-    # Member model imports
-    lines.extend(_dedupe_imports(member_imports))
-    lines.append("")
-
-    if discriminator_key:
-        # Pydantic v2: recommended discriminator syntax is Field(discriminator="...")
-        lines.append(
-            f'{alias_name} = Annotated[{union_type}, Field(discriminator="{discriminator_key}")]'
-        )
-    else:
-        lines.append(f"{alias_name} = {union_type}")
-
-    lines.append("")
-    return "\n".join(lines)
+    return jinja_env.get_template(ALIAS_UNION_TEMPLATE).render(
+        alias_name=alias_name,
+        union_type=union_type,
+        discriminator_key=discriminator_key,
+        member_imports=_dedupe_imports(member_imports),
+    )
 
 
 def type_converter(  # noqa: C901
@@ -566,6 +545,7 @@ def generate_models(
                 # Create alias module once
                 if alias_name not in alias_models_by_name:
                     alias_content = _render_union_alias_module(
+                        jinja_env=jinja_env,
                         alias_name=alias_name,
                         union_type=union_type_str,
                         discriminator_key=discriminator_key,
