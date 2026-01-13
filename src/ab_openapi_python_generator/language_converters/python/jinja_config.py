@@ -7,12 +7,11 @@ from . import common
 ENUM_TEMPLATE = "enum.jinja2"
 MODELS_TEMPLATE = "models.jinja2"
 MODELS_TEMPLATE_PYDANTIC_V2 = "models_pydantic_2.jinja2"
-SERVICE_TEMPLATE = "service.jinja2"
-HTTPX_TEMPLATE = "httpx.jinja2"
-API_CONFIG_TEMPLATE = "apiconfig.jinja2"
-API_CONFIG_TEMPLATE_PYDANTIC_V2 = "apiconfig_pydantic_2.jinja2"
 ALIAS_UNION_TEMPLATE = "alias_union.jinja2"
 DISCRIMINATOR_ENUM_TEMPLATE = "discriminator_enum.jinja2"
+HTTP_EXCEPTION_TEMPLATE = "http_exception.jinja2"
+SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2 = "sync_client_httpx_pydantic_2.jinja2"
+ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2 = "async_client_httpx_pydantic_2.jinja2"
 TEMPLATE_PATH = Path(__file__).parent / "templates"
 
 

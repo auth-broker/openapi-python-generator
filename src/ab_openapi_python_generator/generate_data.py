@@ -12,7 +12,6 @@ from httpx import ConnectError, ConnectTimeout
 from pydantic import ValidationError
 
 from .common import FormatOptions, Formatter, HTTPLibrary, PydanticVersion
-from .language_converters.python.jinja_config import SERVICE_TEMPLATE, create_jinja_env
 from .models import ConversionResult
 from .parsers import (
     generate_code_3_0,
@@ -35,9 +34,7 @@ def write_code(path: Path, content: str, formatter: Formatter) -> None:
     elif formatter == Formatter.NONE:
         formatted_contend = content
     else:
-        raise NotImplementedError(
-            f"Missing implementation for formatter {formatter!r}."
-        )
+        raise NotImplementedError(f"Missing implementation for formatter {formatter!r}.")
     with open(path, "w") as f:
         f.write(formatted_contend)
 
@@ -74,9 +71,7 @@ def get_open_api(source: Union[str, Path]):
     """
     try:
         # Handle remote files
-        if not isinstance(source, Path) and (
-            source.startswith("http://") or source.startswith("https://")
-        ):
+        if not isinstance(source, Path) and (source.startswith("http://") or source.startswith("https://")):
             content = httpx.get(source).text
             # Try JSON first, then YAML for remote files
             try:
@@ -96,9 +91,7 @@ def get_open_api(source: Union[str, Path]):
                     try:
                         data = yaml.safe_load(file_content)
                     except yaml.YAMLError as e:
-                        click.echo(
-                            f"File {source} is neither a valid JSON nor YAML file: {str(e)}"
-                        )
+                        click.echo(f"File {source} is neither a valid JSON nor YAML file: {str(e)}")
                         raise
 
         # Detect version and parse with appropriate parser
@@ -110,16 +103,12 @@ def get_open_api(source: Union[str, Path]):
             openapi_obj = parse_openapi_3_1(data)  # type: ignore[assignment]
         else:
             # Unsupported version detected (version detection already limited to 3.0 / 3.1)
-            raise ValueError(
-                f"Unsupported OpenAPI version: {version}. Only 3.0.x and 3.1.x are supported."
-            )
+            raise ValueError(f"Unsupported OpenAPI version: {version}. Only 3.0.x and 3.1.x are supported.")
 
         return openapi_obj, version
 
     except FileNotFoundError:
-        click.echo(
-            f"File {source} not found. Please make sure to pass the path to the OpenAPI specification."
-        )
+        click.echo(f"File {source} not found. Please make sure to pass the path to the OpenAPI specification.")
         raise
     except (ConnectError, ConnectTimeout):
         click.echo(f"Could not connect to {source}.")
@@ -129,69 +118,80 @@ def get_open_api(source: Union[str, Path]):
         raise
 
 
-def write_data(
-    data: ConversionResult, output: Union[str, Path], formatter: Formatter
-) -> None:
+def write_data(data: ConversionResult, output: Union[str, Path], formatter: Formatter) -> None:
     """
-    This function will firstly create the folder structure of output, if it doesn't exist. Then it will create the
-    models from data.models into the models sub module of the output folder. After this, the services will be created
-    into the services sub module of the output folder.
-    :param data: The data to write.
-    :param output: The path to the output folder.
-    :param formatter: The formatter applied to the code written.
+    Write generated code to disk.
+
+    Creates:
+      - models/ (and models/__init__.py)
+      - clients/ (and clients/__init__.py)
+      - exceptions.py (package root, if present)
+      - __init__.py (package root)
     """
+    out = Path(output)
+    out.mkdir(parents=True, exist_ok=True)
 
-    # Create the folder structure of the output folder.
-    Path(output).mkdir(parents=True, exist_ok=True)
-
-    # Create the models module.
-    models_path = Path(output) / "models"
+    # ----------------------------
+    # models/
+    # ----------------------------
+    models_path = out / "models"
     models_path.mkdir(parents=True, exist_ok=True)
 
-    # Create the services module.
-    services_path = Path(output) / "services"
-    services_path.mkdir(parents=True, exist_ok=True)
-
-    files: List[str] = []
-
-    # Write the models.
+    model_files: List[str] = []
     for model in data.models:
-        files.append(model.file_name)
+        model_files.append(model.file_name)
         write_code(models_path / f"{model.file_name}.py", model.content, formatter)
 
-    # Create models.__init__.py file containing imports to all models.
     write_code(
         models_path / "__init__.py",
-        "\n".join([f"from .{file} import *" for file in files]),
+        "\n".join([f"from .{f} import *" for f in model_files]) + ("\n" if model_files else ""),
         formatter,
     )
 
-    files = []
+    # ----------------------------
+    # clients/
+    # ----------------------------
+    clients_path = out / "clients"
+    clients_path.mkdir(parents=True, exist_ok=True)
 
-    # Write the services.
-    jinja_env = create_jinja_env()
-    for service in data.services:
-        if len(service.operations) == 0:
-            continue
-        files.append(service.file_name)
-        write_code(
-            services_path / f"{service.file_name}.py",
-            jinja_env.get_template(SERVICE_TEMPLATE).render(**service.model_dump()),
-            formatter,
-        )
+    client_files: List[str] = []
+    for client in data.clients:
+        client_files.append(client.file_name)
+        write_code(clients_path / f"{client.file_name}.py", client.content, formatter)
 
-    # Create services.__init__.py file containing imports to all services.
-    write_code(services_path / "__init__.py", "", formatter)
-
-    # Write the api_config.py file.
-    write_code(Path(output) / "api_config.py", data.api_config.content, formatter)
-
-    # Write the __init__.py file.
     write_code(
-        Path(output) / "__init__.py",
-        "from .models import *\nfrom .services import *\nfrom .api_config import *",
+        clients_path / "__init__.py",
+        "\n".join([f"from .{f} import *" for f in client_files]) + ("\n" if client_files else ""),
         formatter,
     )
+
+    # ----------------------------
+    # exceptions/
+    # ----------------------------
+    exceptions_path = out / "exceptions"
+    exceptions_path.mkdir(parents=True, exist_ok=True)
+
+    exception_files: List[str] = []
+    for ex in data.exceptions:
+        exception_files.append(ex.file_name)
+        write_code(exceptions_path / f"{ex.file_name}.py", ex.content, formatter)
+
+    write_code(
+        exceptions_path / "__init__.py",
+        "\n".join([f"from .{f} import *" for f in exception_files]) + ("\n" if exception_files else ""),
+        formatter,
+    )
+
+    # ----------------------------
+    # package __init__.py (root)
+    # ----------------------------
+    init_lines: List[str] = [
+        "from .models import *",
+        "from .clients import *",
+        "from .exceptions import *",
+    ]
+
+    write_code(out / "__init__.py", "\n".join(init_lines) + "\n", formatter)
 
 
 def generate_data(

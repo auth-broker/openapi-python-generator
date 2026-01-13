@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import re
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import click
@@ -27,15 +28,13 @@ from openapi_pydantic.v3.v3_1 import (
 from ab_openapi_python_generator.common import PydanticVersion
 from ab_openapi_python_generator.language_converters.python import common
 from ab_openapi_python_generator.language_converters.python.jinja_config import (
+    ALIAS_UNION_TEMPLATE,
+    DISCRIMINATOR_ENUM_TEMPLATE,
     ENUM_TEMPLATE,
     MODELS_TEMPLATE,
     MODELS_TEMPLATE_PYDANTIC_V2,
-    ALIAS_UNION_TEMPLATE,
-    DISCRIMINATOR_ENUM_TEMPLATE,
     create_jinja_env,
 )
-from dataclasses import dataclass
-
 from ab_openapi_python_generator.models import Model, Property, TypeConversion
 
 # Type aliases for compatibility
@@ -305,10 +304,7 @@ def _build_discriminator_bindings(components: Components) -> Dict[str, Discrimin
         if discriminator_key is None:
             continue
 
-        enum_name = (
-            f"{_pascal_schema_name(schema_name)}"
-            f"{_pascal_discriminator(discriminator_key)}"
-        )
+        enum_name = f"{_pascal_schema_name(schema_name)}{_pascal_discriminator(discriminator_key)}"
 
         mapping = getattr(disc, "mapping", None) or {}
         # invert mapping to get $ref -> value
@@ -366,11 +362,7 @@ def type_converter(  # noqa: C901
         return TypeConversion(
             original_type=schema.ref,
             converted_type=converted_type,
-            import_types=(
-                [f"from .{import_type} import {import_type}"]
-                if import_type != model_name
-                else None
-            ),
+            import_types=([f"from .{import_type} import {import_type}"] if import_type != model_name else None),
         )
 
     if required:
@@ -383,7 +375,9 @@ def type_converter(  # noqa: C901
     original_type = (
         schema.type.value
         if hasattr(schema.type, "value") and schema.type is not None
-        else str(schema.type) if schema.type is not None else "object"
+        else str(schema.type)
+        if schema.type is not None
+        else "object"
     )
     import_types: Optional[List[str]] = None
 
@@ -412,22 +406,16 @@ def type_converter(  # noqa: C901
                         )
                     )
 
-        original_type = (
-            "tuple<" + ",".join([i.original_type for i in conversions]) + ">"
-        )
+        original_type = "tuple<" + ",".join([i.original_type for i in conversions]) + ">"
         if len(conversions) == 1:
             converted_type = conversions[0].converted_type
         else:
-            converted_type = (
-                "Tuple[" + ",".join([i.converted_type for i in conversions]) + "]"
-            )
+            converted_type = "Tuple[" + ",".join([i.converted_type for i in conversions]) + "]"
 
         converted_type = pre_type + converted_type + post_type
         # Collect first import from referenced sub-schemas only (skip empty lists)
         import_types = [
-            i.import_types[0]
-            for i in conversions
-            if i.import_types is not None and len(i.import_types) > 0
+            i.import_types[0] for i in conversions if i.import_types is not None and len(i.import_types) > 0
         ] or None
 
     elif schema.oneOf is not None or schema.anyOf is not None:
@@ -447,23 +435,15 @@ def type_converter(  # noqa: C901
                         import_types=import_types,
                     )
                 )
-        original_type = (
-            "union<" + ",".join([i.original_type for i in conversions]) + ">"
-        )
+        original_type = "union<" + ",".join([i.original_type for i in conversions]) + ">"
 
         if len(conversions) == 1:
             converted_type = conversions[0].converted_type
         else:
-            converted_type = (
-                "Union[" + ",".join([i.converted_type for i in conversions]) + "]"
-            )
+            converted_type = "Union[" + ",".join([i.converted_type for i in conversions]) + "]"
 
         converted_type = pre_type + converted_type + post_type
-        import_types = list(
-            itertools.chain(
-                *[i.import_types for i in conversions if i.import_types is not None]
-            )
-        )
+        import_types = list(itertools.chain(*[i.import_types for i in conversions if i.import_types is not None]))
     # We only want to auto convert to datetime if orjson is used throghout the code, otherwise we can not
     # serialize it to JSON.
     elif (schema.type == "string" or str(schema.type) == "DataType.STRING") and (
@@ -483,9 +463,7 @@ def type_converter(  # noqa: C901
         else:
             converted_type = pre_type + "UUID" + post_type
             import_types = ["from uuid import UUID"]
-    elif (
-        schema.type == "string" or str(schema.type) == "DataType.STRING"
-    ) and schema.schema_format == "date-time":
+    elif (schema.type == "string" or str(schema.type) == "DataType.STRING") and schema.schema_format == "date-time":
         converted_type = pre_type + "datetime" + post_type
         import_types = ["from datetime import datetime"]
     elif schema.type == "integer" or str(schema.type) == "DataType.INTEGER":
@@ -496,9 +474,7 @@ def type_converter(  # noqa: C901
         converted_type = pre_type + "bool" + post_type
     elif schema.type == "array" or str(schema.type) == "DataType.ARRAY":
         retVal = pre_type + "List["
-        if isinstance(schema.items, Reference30) or isinstance(
-            schema.items, Reference31
-        ):
+        if isinstance(schema.items, Reference30) or isinstance(schema.items, Reference31):
             converted_reference = _generate_property_from_reference(
                 model_name or "", "", schema.items, schema, required
             )
@@ -535,10 +511,7 @@ def type_converter(  # noqa: C901
                     and schema.schema_format.startswith("uuid")
                     and common.get_use_orjson()
                 ):
-                    if (
-                        len(schema.schema_format) > 4
-                        and schema.schema_format[4].isnumeric()
-                    ):
+                    if len(schema.schema_format) > 4 and schema.schema_format[4].isnumeric():
                         uuid_type = schema.schema_format.upper()
                         converted_type = pre_type + uuid_type + post_type
                         import_types = ["from pydantic import " + uuid_type]
@@ -576,10 +549,7 @@ def type_converter(  # noqa: C901
                         and schema.schema_format.startswith("uuid")
                         and common.get_use_orjson()
                     ):
-                        if (
-                            len(schema.schema_format) > 4
-                            and schema.schema_format[4].isnumeric()
-                        ):
+                        if len(schema.schema_format) > 4 and schema.schema_format[4].isnumeric():
                             uuid_type = schema.schema_format.upper()
                             converted_type = pre_type + uuid_type + post_type
                             import_types = ["from pydantic import " + uuid_type]
@@ -630,11 +600,7 @@ def _generate_property_from_schema(
     :param parent_schema: Component this belongs to
     :return: Property
     """
-    required = (
-        parent_schema is not None
-        and parent_schema.required is not None
-        and name in parent_schema.required
-    )
+    required = parent_schema is not None and parent_schema.required is not None and name in parent_schema.required
 
     import_type = None
     if required:
@@ -666,26 +632,20 @@ def _generate_property_from_reference(
     :return: Property and model to be imported by the file
     """
     required = (
-        parent_schema is not None
-        and parent_schema.required is not None
-        and name in parent_schema.required
+        parent_schema is not None and parent_schema.required is not None and name in parent_schema.required
     ) or force_required
     import_model = common.normalize_symbol(reference.ref.split("/")[-1])
 
     if import_model == model_name:
         type_conv = TypeConversion(
             original_type=reference.ref,
-            converted_type=(
-                import_model if required else 'Optional["' + import_model + '"]'
-            ),
+            converted_type=(import_model if required else 'Optional["' + import_model + '"]'),
             import_types=None,
         )
     else:
         type_conv = TypeConversion(
             original_type=reference.ref,
-            converted_type=(
-                import_model if required else "Optional[" + import_model + "]"
-            ),
+            converted_type=(import_model if required else "Optional[" + import_model + "]"),
             import_types=[f"from .{import_model} import {import_model}"],
         )
     return Property(
@@ -697,9 +657,7 @@ def _generate_property_from_reference(
     )
 
 
-def generate_models(
-    components: Components, pydantic_version: PydanticVersion = PydanticVersion.V2
-) -> List[Model]:
+def generate_models(components: Components, pydantic_version: PydanticVersion = PydanticVersion.V2) -> List[Model]:
     """
     Receives components from an OpenAPI 3.0+ specification and generates the models from it.
     Additionally:
@@ -735,14 +693,10 @@ def generate_models(
         # --------------------------
         if schema_or_reference.enum is not None:
             value_dict = schema_or_reference.model_dump()
-            value_dict["enum"] = [
-                (common.normalize_symbol(str(i)).upper(), i) for i in value_dict["enum"]
-            ]
+            value_dict["enum"] = [(common.normalize_symbol(str(i)).upper(), i) for i in value_dict["enum"]]
             m = Model(
                 file_name=name,
-                content=jinja_env.get_template(ENUM_TEMPLATE).render(
-                    name=name, **value_dict
-                ),
+                content=jinja_env.get_template(ENUM_TEMPLATE).render(name=name, **value_dict),
                 openapi_object=schema_or_reference,
                 properties=[],
             )
@@ -758,30 +712,24 @@ def generate_models(
         # Normal models
         # --------------------------
         properties: List[Property] = []
-        property_iterator = (
-            schema_or_reference.properties.items()
-            if schema_or_reference.properties is not None
-            else {}
-        )
+        property_iterator = schema_or_reference.properties.items() if schema_or_reference.properties is not None else {}
 
         for prop_name, prop_schema in property_iterator:
             # Reference property
             if isinstance(prop_schema, Reference30) or isinstance(prop_schema, Reference31):
-                conv_property = _generate_property_from_reference(
-                    name, prop_name, prop_schema, schema_or_reference
-                )
+                conv_property = _generate_property_from_reference(name, prop_name, prop_schema, schema_or_reference)
                 properties.append(conv_property)
                 continue
 
             # Schema property
-            conv_property = _generate_property_from_schema(
-                name, prop_name, prop_schema, schema_or_reference
-            )
+            conv_property = _generate_property_from_schema(name, prop_name, prop_schema, schema_or_reference)
 
             # If this model is a discriminated union member, and this property
             # is the discriminator key, make it a Literal[...] with a default
             binding = discriminator_bindings.get(name)
-            if binding and common.normalize_symbol(conv_property.name) == common.normalize_symbol(binding.discriminator_key):
+            if binding and common.normalize_symbol(conv_property.name) == common.normalize_symbol(
+                binding.discriminator_key
+            ):
                 conv_property.required = True
                 conv_property.default = f"{binding.enum_name}.{binding.enum_member}"
 
@@ -845,11 +793,7 @@ def generate_models(
 
             properties.append(conv_property)
 
-        template_name = (
-            MODELS_TEMPLATE_PYDANTIC_V2
-            if pydantic_version == PydanticVersion.V2
-            else MODELS_TEMPLATE
-        )
+        template_name = MODELS_TEMPLATE_PYDANTIC_V2 if pydantic_version == PydanticVersion.V2 else MODELS_TEMPLATE
 
         generated_content = jinja_env.get_template(template_name).render(
             schema_name=name, schema=schema_or_reference, properties=properties
@@ -872,9 +816,7 @@ def generate_models(
     # Ensure enum modules for discriminators are included
     enum_models: List[Model] = []
     for enum_name, members in enum_members_by_name.items():
-        enum_content = jinja_env.get_template(DISCRIMINATOR_ENUM_TEMPLATE).render(
-            enum_name=enum_name, members=members
-        )
+        enum_content = jinja_env.get_template(DISCRIMINATOR_ENUM_TEMPLATE).render(enum_name=enum_name, members=members)
         try:
             compile(enum_content, "<string>", "exec")
         except SyntaxError as e:  # pragma: no cover

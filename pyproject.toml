@@ -1,6 +1,6 @@
 [project]
 name = "ab-openapi-python-generator"
-version = "2.1.4"
+version = "2.2.0"
 description = "Openapi Python Generator"
 authors = [
     { name = "Marco Müllner", email = "muellnermarco@gmail.com" },
