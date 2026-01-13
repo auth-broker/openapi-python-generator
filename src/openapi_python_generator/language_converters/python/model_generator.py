@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import itertools
-from typing import List, Optional, Union
+import re
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import click
 from openapi_pydantic.v3.v3_0 import (
@@ -35,6 +38,89 @@ from openapi_python_generator.models import Model, Property, TypeConversion
 Schema = Union[Schema30, Schema31]
 Reference = Union[Reference30, Reference31]
 Components = Union[Components30, Components31]
+
+
+def _get_discriminator_key(schema: Schema) -> Optional[str]:
+    """
+    Return discriminator property name if present on the schema.
+    openapi-pydantic v3.x uses `schema.discriminator.propertyName` (common),
+    but we defensively check a couple of variants.
+    """
+    disc = getattr(schema, "discriminator", None)
+    if disc is None:
+        return None
+
+    # Most common: propertyName
+    key = getattr(disc, "propertyName", None)
+    if key:
+        return str(key)
+
+    # Defensive fallbacks
+    key = getattr(disc, "property_name", None)
+    if key:
+        return str(key)
+
+    return None
+
+
+def _schema_is_union(schema: Schema) -> bool:
+    used = schema.oneOf if schema.oneOf is not None else schema.anyOf
+    return used is not None and len(used) > 0
+
+
+def _alias_name_for_property(prop_name: str) -> str:
+    # "token_issuer" -> "TokenIssuer"
+    return common.normalize_symbol(prop_name)
+
+
+def _dedupe_imports(imports: Optional[List[str]]) -> List[str]:
+    if not imports:
+        return []
+    seen: Set[str] = set()
+    out: List[str] = []
+    for imp in imports:
+        if imp and imp not in seen:
+            seen.add(imp)
+            out.append(imp)
+    return out
+
+
+def _render_union_alias_module(
+    alias_name: str,
+    union_type: str,
+    discriminator_key: Optional[str],
+    member_imports: List[str],
+) -> str:
+    """
+    Create a standalone python module that defines a named alias for a Union or
+    discriminated union.
+
+    Python 3.9 compatible (no `type X = ...` syntax).
+    """
+    lines: List[str] = []
+
+    # We want *minimal* imports so Black is happy and the module is standalone.
+    # Use Annotated only for discriminated unions.
+    if discriminator_key:
+        lines.append("from typing import Annotated, Union")
+        lines.append("from pydantic import Field")
+    else:
+        lines.append("from typing import Union")
+
+    # Member model imports
+    lines.extend(_dedupe_imports(member_imports))
+    lines.append("")
+
+    if discriminator_key:
+        # Pydantic v2: recommended discriminator syntax is Field(discriminator="...")
+        lines.append(
+            f'{alias_name} = Annotated[{union_type}, Field(discriminator="{discriminator_key}")]'
+        )
+    else:
+        lines.append(f"{alias_name} = {union_type}")
+
+    lines.append("")
+    return "\n".join(lines)
 
 
 def type_converter(  # noqa: C901
@@ -396,12 +482,10 @@ def generate_models(
 ) -> List[Model]:
     """
     Receives components from an OpenAPI 3.0+ specification and generates the models from it.
-    It does so, by iterating over the components.schemas dictionary. For each schema, it checks if
-    it is a normal schema (i.e. simple type like string, integer, etc.), a reference to another schema, or
-    an array of types/references. It then computes pydantic models from it using jinja2
-    :param components: The components from an OpenAPI 3.0+ specification.
-    :param pydantic_version: The version of pydantic to use.
-    :return: A list of models.
+    Additionally:
+      - Detects unions / discriminated unions in property schemas (oneOf/anyOf)
+      - Emits a named alias module (e.g. TokenIssuer.py)
+      - Rewrites the property type to use that alias (instead of Union[...])
     """
     models: List[Model] = []
 
@@ -409,8 +493,16 @@ def generate_models(
         return models
 
     jinja_env = create_jinja_env()
+
+    # Track alias modules so we only create each once
+    alias_models_by_name: Dict[str, Model] = {}
+
     for schema_name, schema_or_reference in components.schemas.items():
         name = common.normalize_symbol(schema_name)
+
+        # --------------------------
+        # Enums
+        # --------------------------
         if schema_or_reference.enum is not None:
             value_dict = schema_or_reference.model_dump()
             value_dict["enum"] = [
@@ -432,21 +524,73 @@ def generate_models(
 
             continue  # pragma: no cover
 
-        properties = []
+        # --------------------------
+        # Normal models
+        # --------------------------
+        properties: List[Property] = []
         property_iterator = (
             schema_or_reference.properties.items()
             if schema_or_reference.properties is not None
             else {}
         )
-        for prop_name, property in property_iterator:
-            if isinstance(property, Reference30) or isinstance(property, Reference31):
+
+        for prop_name, prop_schema in property_iterator:
+            # Reference property
+            if isinstance(prop_schema, Reference30) or isinstance(prop_schema, Reference31):
                 conv_property = _generate_property_from_reference(
-                    name, prop_name, property, schema_or_reference
+                    name, prop_name, prop_schema, schema_or_reference
                 )
-            else:
-                conv_property = _generate_property_from_schema(
-                    name, prop_name, property, schema_or_reference
+                properties.append(conv_property)
+                continue
+
+            # Schema property
+            conv_property = _generate_property_from_schema(
+                name, prop_name, prop_schema, schema_or_reference
+            )
+
+            # -----------------------------------------
+            # NEW: union / discriminated union factoring
+            # -----------------------------------------
+            if isinstance(prop_schema, (Schema30, Schema31)) and _schema_is_union(prop_schema):
+                alias_name = _alias_name_for_property(prop_name)
+                discriminator_key = _get_discriminator_key(prop_schema)
+
+                # Build the union type and gather imports from members.
+                # Important: we want a NON-optional union for the alias definition.
+                union_conv = type_converter(prop_schema, required=True, model_name=name)
+                union_type_str = union_conv.converted_type  # e.g. Union[A,B,C]
+                member_imports = union_conv.import_types or []
+
+                # Create alias module once
+                if alias_name not in alias_models_by_name:
+                    alias_content = _render_union_alias_module(
+                        alias_name=alias_name,
+                        union_type=union_type_str,
+                        discriminator_key=discriminator_key,
+                        member_imports=member_imports,
+                    )
+
+                    # Validate alias module compiles
+                    try:
+                        compile(alias_content, "<string>", "exec")
+                    except SyntaxError as e:  # pragma: no cover
+                        click.echo(f"Error in union alias {alias_name}: {e}")  # pragma: no cover
+
+                    alias_models_by_name[alias_name] = Model(
+                        file_name=alias_name,
+                        content=alias_content,
+                        openapi_object=prop_schema,
+                        properties=[],
+                    )
+
+                # Rewrite property type to use alias
+                rewritten_type = alias_name if conv_property.required else f"Optional[{alias_name}]"
+                conv_property.type = TypeConversion(
+                    original_type=conv_property.type.original_type,
+                    converted_type=rewritten_type,
+                    import_types=[f"from .{alias_name} import {alias_name}"],
                 )
+
             properties.append(conv_property)
 
         template_name = (
@@ -472,5 +616,8 @@ def generate_models(
                 properties=properties,
             )
         )
+
+    # Ensure alias modules are included in output
+    models.extend(alias_models_by_name.values())
 
     return models
