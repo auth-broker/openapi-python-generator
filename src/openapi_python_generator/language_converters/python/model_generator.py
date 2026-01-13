@@ -129,6 +129,16 @@ def _pascal_discriminator(discriminator_key: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in parts) or "Discriminator"
 
 
+def _pascal_schema_name(schema_name: str) -> str:
+    """
+    Convert a schema name like "token_issuer" into "TokenIssuer" for generated type/enum names.
+    (We don't want enum class names like `token_issuerType`.)
+    """
+    sym = common.normalize_symbol(schema_name)
+    parts = [p for p in sym.replace("-", "_").split("_") if p]
+    return "".join(p[:1].upper() + p[1:] for p in parts) or "Schema"
+
+
 def _invert_discriminator_mapping(mapping: Optional[dict]) -> Dict[str, str]:
     """
     discriminator.mapping is usually { "<disc_value>": "<$ref>" }
@@ -172,7 +182,7 @@ def _discover_discriminated_unions(
         if not discriminator_key:
             return
 
-        enum_name = f"{common.normalize_symbol(alias_name)}{_pascal_discriminator(discriminator_key)}"
+        enum_name = f"{_pascal_schema_name(alias_name)}{_pascal_discriminator(discriminator_key)}"
         ref_to_value = _invert_discriminator_mapping(getattr(disc, "mapping", None))
 
         members: List[Tuple[str, str]] = []
@@ -250,7 +260,7 @@ def _build_discriminator_bindings(components: Components) -> Dict[str, Discrimin
             continue
 
         enum_name = (
-            f"{common.normalize_symbol(schema_name)}"
+            f"{_pascal_schema_name(schema_name)}"
             f"{_pascal_discriminator(discriminator_key)}"
         )
 
