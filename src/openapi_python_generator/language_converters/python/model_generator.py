@@ -31,8 +31,11 @@ from openapi_python_generator.language_converters.python.jinja_config import (
     MODELS_TEMPLATE,
     MODELS_TEMPLATE_PYDANTIC_V2,
     ALIAS_UNION_TEMPLATE,
+    DISCRIMINATOR_ENUM_TEMPLATE,
     create_jinja_env,
 )
+from dataclasses import dataclass
+
 from openapi_python_generator.models import Model, Property, TypeConversion
 
 # Type aliases for compatibility
@@ -102,6 +105,83 @@ def _render_union_alias_module(
         discriminator_key=discriminator_key,
         member_imports=_dedupe_imports(member_imports),
     )
+
+
+@dataclass(frozen=True)
+class DiscriminatorBinding:
+    enum_name: str
+    enum_member: str
+    discriminator_key: str
+
+
+def _enum_member_name(value: str) -> str:
+    # Make a safe enum member name, e.g. "pkce" -> "PKCE", "oauth2" -> "OAUTH2"
+    return common.normalize_symbol(str(value)).upper()
+
+
+def _pascal_discriminator(discriminator_key: str) -> str:
+    """
+    Convert a discriminator property name (e.g. "type", "kind", "event_type")
+    into a PascalCase suffix ("Type", "Kind", "EventType").
+    """
+    sym = common.normalize_symbol(discriminator_key)
+    parts = [p for p in sym.replace("-", "_").split("_") if p]
+    return "".join(p[:1].upper() + p[1:] for p in parts) or "Discriminator"
+
+
+def _build_discriminator_bindings(components: Components) -> Dict[str, DiscriminatorBinding]:
+    """
+    Scan components.schemas for discriminator-based oneOf schemas and return:
+      { "<MemberModelName>": DiscriminatorBinding(...) }
+
+    We use:
+      - discriminator.propertyName as the key
+      - discriminator.mapping (preferred) to get per-member discriminator values
+      - fallback: schema name when mapping not present
+    """
+    bindings: Dict[str, DiscriminatorBinding] = {}
+
+    if not getattr(components, "schemas", None):
+        return bindings
+
+    for schema_name, schema in components.schemas.items():
+        disc = getattr(schema, "discriminator", None)
+        one_of = getattr(schema, "oneOf", None)
+
+        if disc is None or not one_of:
+            continue
+
+        discriminator_key = getattr(disc, "propertyName", None) or getattr(disc, "property_name", None)
+        if discriminator_key is None:
+            continue
+
+        enum_name = (
+            f"{common.normalize_symbol(schema_name)}"
+            f"{_pascal_discriminator(discriminator_key)}"
+        )
+
+        mapping = getattr(disc, "mapping", None) or {}
+        # invert mapping to get $ref -> value
+        ref_to_value: Dict[str, str] = {ref: value for value, ref in mapping.items()}
+
+        for sub in one_of:
+            if not (isinstance(sub, Reference30) or isinstance(sub, Reference31)):
+                continue
+
+            ref = sub.ref
+            member_model = common.normalize_symbol(ref.split("/")[-1])
+
+            disc_value = ref_to_value.get(ref)
+            if disc_value is None:
+                disc_value = member_model
+
+            bindings[member_model] = DiscriminatorBinding(
+                enum_name=enum_name,
+                enum_member=_enum_member_name(disc_value),
+                discriminator_key=discriminator_key,
+            )
+
+    return bindings
 
 
 def type_converter(  # noqa: C901
@@ -474,6 +554,32 @@ def generate_models(
         return models
 
     jinja_env = create_jinja_env()
+    discriminator_bindings = _build_discriminator_bindings(components)
+    # Build enum members per enum_name for later enum generation
+    enum_members_by_name: Dict[str, List[Tuple[str, str]]] = {}
+    if getattr(components, "schemas", None):
+        for schema_name, schema in components.schemas.items():
+            disc = getattr(schema, "discriminator", None)
+            one_of = getattr(schema, "oneOf", None)
+            if disc is None or not one_of:
+                continue
+            discriminator_key = getattr(disc, "propertyName", None) or getattr(disc, "property_name", None)
+            enum_name = (
+                f"{common.normalize_symbol(schema_name)}"
+                f"{_pascal_discriminator(discriminator_key or 'discriminator')}"
+            )
+            mapping = getattr(disc, "mapping", None) or {}
+            ref_to_value: Dict[str, str] = {ref: value for value, ref in mapping.items()}
+            members: List[Tuple[str, str]] = []
+            for sub in one_of:
+                if not (isinstance(sub, Reference30) or isinstance(sub, Reference31)):
+                    continue
+                ref = sub.ref
+                member_model = common.normalize_symbol(ref.split("/")[-1])
+                disc_value = ref_to_value.get(ref) or member_model
+                members.append((_enum_member_name(disc_value), disc_value))
+            if members:
+                enum_members_by_name[enum_name] = members
 
     # Track alias modules so we only create each once
     alias_models_by_name: Dict[str, Model] = {}
@@ -528,6 +634,24 @@ def generate_models(
             conv_property = _generate_property_from_schema(
                 name, prop_name, prop_schema, schema_or_reference
             )
+
+            # If this model is a discriminated union member, and this property
+            # is the discriminator key, make it a Literal[...] with a default
+            binding = discriminator_bindings.get(name)
+            if binding and conv_property.name == binding.discriminator_key:
+                conv_property.required = True
+                conv_property.default = f"{binding.enum_name}.{binding.enum_member}"
+
+                extra_imports = [
+                    "from typing import Literal",
+                    f"from .{binding.enum_name} import {binding.enum_name}",
+                ]
+
+                conv_property.type = TypeConversion(
+                    original_type=conv_property.type.original_type,
+                    converted_type=f"Literal[{binding.enum_name}.{binding.enum_member}]",
+                    import_types=extra_imports,
+                )
 
             # -----------------------------------------
             # NEW: union / discriminated union factoring
@@ -599,7 +723,24 @@ def generate_models(
             )
         )
 
+    # Ensure enum modules for discriminators are included
+    enum_models: List[Model] = []
+    for enum_name, members in enum_members_by_name.items():
+        enum_content = jinja_env.get_template(DISCRIMINATOR_ENUM_TEMPLATE).render(
+            enum_name=enum_name, members=members
+        )
+        try:
+            compile(enum_content, "<string>", "exec")
+        except SyntaxError as e:  # pragma: no cover
+            click.echo(f"Error in enum {enum_name}: {e}")  # pragma: no cover
+
+        enum_models.append(
+            Model(file_name=enum_name, content=enum_content, openapi_object=None, properties=[])
+        )
+
     # Ensure alias modules are included in output
     models.extend(alias_models_by_name.values())
+    # Append enum modules last
+    models.extend(enum_models)
 
     return models

@@ -1,0 +1,7 @@
+from enum import Enum
+
+
+class {{ enum_name }}(str, Enum):
+{% for member_name, member_value in members %}
+    {{ member_name }} = "{{ member_value }}"
+{% endfor %}
