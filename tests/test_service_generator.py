@@ -1,4 +1,9 @@
 import pytest
+pytest.skip(
+    "service_generator was removed; services now lives on the client classes.",
+    allow_module_level=True,
+)
+
 from openapi_pydantic.v3 import (
     Operation,
     Reference,
