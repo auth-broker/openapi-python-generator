@@ -1,23 +1,23 @@
 import pytest
 from openapi_pydantic.v3 import Schema, Reference, DataType, OpenAPI
 
-from openapi_python_generator.common import PydanticVersion
-from openapi_python_generator.language_converters.python import common
-from openapi_python_generator.language_converters.python.model_generator import (
+from ab_openapi_python_generator.common import PydanticVersion
+from ab_openapi_python_generator.language_converters.python import common
+from ab_openapi_python_generator.language_converters.python.model_generator import (
     _generate_property_from_reference,
 )
-from openapi_python_generator.language_converters.python.model_generator import (
+from ab_openapi_python_generator.language_converters.python.model_generator import (
     _generate_property_from_schema,
 )
-from openapi_python_generator.language_converters.python.model_generator import (
+from ab_openapi_python_generator.language_converters.python.model_generator import (
     generate_models,
 )
-from openapi_python_generator.language_converters.python.model_generator import (
+from ab_openapi_python_generator.language_converters.python.model_generator import (
     type_converter,
 )
-from openapi_python_generator.models import Model
-from openapi_python_generator.models import Property
-from openapi_python_generator.models import TypeConversion
+from ab_openapi_python_generator.models import Model
+from ab_openapi_python_generator.models import Property
+from ab_openapi_python_generator.models import TypeConversion
 
 
 @pytest.mark.parametrize(

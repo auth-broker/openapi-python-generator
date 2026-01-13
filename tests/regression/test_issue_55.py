@@ -1,8 +1,8 @@
 import pytest
 
-from openapi_python_generator.common import HTTPLibrary
-from openapi_python_generator.generate_data import get_open_api
-from openapi_python_generator.parsers import generate_code_3_1
+from ab_openapi_python_generator.common import HTTPLibrary
+from ab_openapi_python_generator.generate_data import get_open_api
+from ab_openapi_python_generator.parsers import generate_code_3_1
 from tests.conftest import test_data_folder
 
 

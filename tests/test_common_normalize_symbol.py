@@ -1,4 +1,4 @@
-from openapi_python_generator.language_converters.python.common import normalize_symbol
+from ab_openapi_python_generator.language_converters.python.common import normalize_symbol
 
 
 def test_normalize_symbol_keyword_and_chars():

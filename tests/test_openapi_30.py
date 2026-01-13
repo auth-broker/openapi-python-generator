@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from openapi_python_generator.generate_data import generate_data
-from openapi_python_generator.version_detector import detect_openapi_version
-from openapi_python_generator.parsers import parse_openapi_3_0
+from ab_openapi_python_generator.generate_data import generate_data
+from ab_openapi_python_generator.version_detector import detect_openapi_version
+from ab_openapi_python_generator.parsers import parse_openapi_3_0
 
 
 class TestOpenAPI30:

@@ -24,9 +24,9 @@ from openapi_pydantic.v3.v3_1 import (
     Schema as Schema31,
 )
 
-from openapi_python_generator.common import PydanticVersion
-from openapi_python_generator.language_converters.python import common
-from openapi_python_generator.language_converters.python.jinja_config import (
+from ab_openapi_python_generator.common import PydanticVersion
+from ab_openapi_python_generator.language_converters.python import common
+from ab_openapi_python_generator.language_converters.python.jinja_config import (
     ENUM_TEMPLATE,
     MODELS_TEMPLATE,
     MODELS_TEMPLATE_PYDANTIC_V2,
@@ -36,7 +36,7 @@ from openapi_python_generator.language_converters.python.jinja_config import (
 )
 from dataclasses import dataclass
 
-from openapi_python_generator.models import Model, Property, TypeConversion
+from ab_openapi_python_generator.models import Model, Property, TypeConversion
 
 # Type aliases for compatibility
 Schema = Union[Schema30, Schema31]

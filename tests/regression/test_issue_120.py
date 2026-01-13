@@ -1,8 +1,8 @@
 import pytest
 from click.testing import CliRunner
 
-from openapi_python_generator.common import HTTPLibrary, library_config_dict
-from openapi_python_generator.generate_data import generate_data
+from ab_openapi_python_generator.common import HTTPLibrary, library_config_dict
+from ab_openapi_python_generator.generate_data import generate_data
 from tests.conftest import test_data_folder
 from tests.conftest import test_result_path
 

@@ -3,18 +3,18 @@ from typing import Optional, Union
 from openapi_pydantic.v3.v3_0 import OpenAPI as OpenAPI30
 from openapi_pydantic.v3.v3_1 import OpenAPI as OpenAPI31
 
-from openapi_python_generator.common import PydanticVersion
-from openapi_python_generator.language_converters.python import common
-from openapi_python_generator.language_converters.python.api_config_generator import (
+from ab_openapi_python_generator.common import PydanticVersion
+from ab_openapi_python_generator.language_converters.python import common
+from ab_openapi_python_generator.language_converters.python.api_config_generator import (
     generate_api_config,
 )
-from openapi_python_generator.language_converters.python.model_generator import (
+from ab_openapi_python_generator.language_converters.python.model_generator import (
     generate_models,
 )
-from openapi_python_generator.language_converters.python.service_generator import (
+from ab_openapi_python_generator.language_converters.python.service_generator import (
     generate_services,
 )
-from openapi_python_generator.models import ConversionResult, LibraryConfig
+from ab_openapi_python_generator.models import ConversionResult, LibraryConfig
 
 # Type alias for both OpenAPI versions
 OpenAPISpec = Union[OpenAPI30, OpenAPI31]

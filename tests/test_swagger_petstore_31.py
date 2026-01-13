@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from openapi_python_generator.generate_data import generate_data
-from openapi_python_generator.version_detector import detect_openapi_version
-from openapi_python_generator.parsers import parse_openapi_3_1
-from openapi_python_generator.common import HTTPLibrary
+from ab_openapi_python_generator.generate_data import generate_data
+from ab_openapi_python_generator.version_detector import detect_openapi_version
+from ab_openapi_python_generator.parsers import parse_openapi_3_1
+from ab_openapi_python_generator.common import HTTPLibrary
 
 
 class TestSwaggerPetstore31:

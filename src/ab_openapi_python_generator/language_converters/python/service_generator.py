@@ -38,15 +38,15 @@ from openapi_pydantic.v3.v3_1 import (
 )
 from openapi_pydantic.v3.v3_1.parameter import Parameter as Parameter31
 
-from openapi_python_generator.language_converters.python import common
-from openapi_python_generator.language_converters.python.common import normalize_symbol
-from openapi_python_generator.language_converters.python.jinja_config import (
+from ab_openapi_python_generator.language_converters.python import common
+from ab_openapi_python_generator.language_converters.python.common import normalize_symbol
+from ab_openapi_python_generator.language_converters.python.jinja_config import (
     create_jinja_env,
 )
-from openapi_python_generator.language_converters.python.model_generator import (
+from ab_openapi_python_generator.language_converters.python.model_generator import (
     type_converter,
 )
-from openapi_python_generator.models import (
+from ab_openapi_python_generator.models import (
     LibraryConfig,
     OpReturnType,
     Service,

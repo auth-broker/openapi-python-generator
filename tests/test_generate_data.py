@@ -8,12 +8,12 @@ import yaml
 from httpx import ConnectError
 from pydantic import ValidationError
 
-from openapi_python_generator.common import FormatOptions, Formatter, HTTPLibrary
-from openapi_python_generator.common import library_config_dict
-from openapi_python_generator.generate_data import generate_data
-from openapi_python_generator.generate_data import get_open_api
-from openapi_python_generator.generate_data import write_data
-from openapi_python_generator.language_converters.python.generator import generator
+from ab_openapi_python_generator.common import FormatOptions, Formatter, HTTPLibrary
+from ab_openapi_python_generator.common import library_config_dict
+from ab_openapi_python_generator.generate_data import generate_data
+from ab_openapi_python_generator.generate_data import get_open_api
+from ab_openapi_python_generator.generate_data import write_data
+from ab_openapi_python_generator.language_converters.python.generator import generator
 from tests.conftest import test_data_folder
 from tests.conftest import test_data_path
 from tests.conftest import test_result_path

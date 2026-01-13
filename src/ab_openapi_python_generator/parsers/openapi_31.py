@@ -6,11 +6,11 @@ from typing import Optional
 
 from openapi_pydantic.v3.v3_1 import OpenAPI
 
-from openapi_python_generator.common import HTTPLibrary, PydanticVersion
-from openapi_python_generator.language_converters.python.generator import (
+from ab_openapi_python_generator.common import HTTPLibrary, PydanticVersion
+from ab_openapi_python_generator.language_converters.python.generator import (
     generator as base_generator,
 )
-from openapi_python_generator.models import ConversionResult
+from ab_openapi_python_generator.models import ConversionResult
 
 
 def parse_openapi_3_1(spec_data: dict) -> OpenAPI:
@@ -51,7 +51,7 @@ def generate_code_3_1(
     Returns:
         ConversionResult: Generated code and metadata
     """
-    from openapi_python_generator.common import library_config_dict
+    from ab_openapi_python_generator.common import library_config_dict
 
     library_config = library_config_dict[library]
 

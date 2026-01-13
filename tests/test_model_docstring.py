@@ -1,9 +1,9 @@
 from openapi_pydantic.v3 import Schema, Components, DataType
 
-from openapi_python_generator.language_converters.python.model_generator import (
+from ab_openapi_python_generator.language_converters.python.model_generator import (
     generate_models,
 )
-from openapi_python_generator.common import PydanticVersion
+from ab_openapi_python_generator.common import PydanticVersion
 
 
 def test_model_docstring_title_used_when_present_and_fallback_to_name():

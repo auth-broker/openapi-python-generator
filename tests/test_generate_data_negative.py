@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from httpx import ConnectError
 
-from openapi_python_generator.common import Formatter
-from openapi_python_generator.generate_data import get_open_api
+from ab_openapi_python_generator.common import Formatter
+from ab_openapi_python_generator.generate_data import get_open_api
 
 
 def test_get_open_api_file_not_found(tmp_path: Path):
@@ -32,7 +32,7 @@ def test_generate_data_invalid_version(tmp_path: Path, monkeypatch):
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps(spec))
 
-    import openapi_python_generator.generate_data as gd
+    import ab_openapi_python_generator.generate_data as gd
 
     monkeypatch.setattr(gd, "detect_openapi_version", lambda d: "2.5")
     with pytest.raises(ValueError):

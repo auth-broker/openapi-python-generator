@@ -2,13 +2,13 @@ from typing import Optional
 
 from openapi_pydantic.v3 import OpenAPI
 
-from openapi_python_generator.common import PydanticVersion
-from openapi_python_generator.language_converters.python.jinja_config import (
+from ab_openapi_python_generator.common import PydanticVersion
+from ab_openapi_python_generator.language_converters.python.jinja_config import (
     API_CONFIG_TEMPLATE,
     API_CONFIG_TEMPLATE_PYDANTIC_V2,
     create_jinja_env,
 )
-from openapi_python_generator.models import APIConfig
+from ab_openapi_python_generator.models import APIConfig
 
 
 def generate_api_config(

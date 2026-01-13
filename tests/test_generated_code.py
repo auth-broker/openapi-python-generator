@@ -7,8 +7,8 @@ import responses
 from aiohttp import web
 from urllib.parse import urlparse
 
-from openapi_python_generator.common import HTTPLibrary
-from openapi_python_generator.generate_data import generate_data
+from ab_openapi_python_generator.common import HTTPLibrary
+from ab_openapi_python_generator.generate_data import generate_data
 
 from .conftest import test_data_path
 from .conftest import test_result_path

@@ -6,8 +6,8 @@ from typing import Generator
 
 import pytest
 
-from openapi_python_generator.version_detector import detect_openapi_version
-from openapi_python_generator.parsers import parse_openapi_3_0, parse_openapi_3_1
+from ab_openapi_python_generator.version_detector import detect_openapi_version
+from ab_openapi_python_generator.parsers import parse_openapi_3_0, parse_openapi_3_1
 
 test_data_folder = Path(__file__).parent / "test_data"
 test_data_path = test_data_folder / "test_api.json"

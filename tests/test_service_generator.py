@@ -11,9 +11,9 @@ from openapi_pydantic.v3 import (
     ParameterLocation,
 )
 
-from openapi_python_generator.common import HTTPLibrary
-from openapi_python_generator.common import library_config_dict
-from openapi_python_generator.language_converters.python.service_generator import (
+from ab_openapi_python_generator.common import HTTPLibrary
+from ab_openapi_python_generator.common import library_config_dict
+from ab_openapi_python_generator.language_converters.python.service_generator import (
     generate_body_param,
     generate_operation_id,
     generate_params,
@@ -21,8 +21,8 @@ from openapi_python_generator.language_converters.python.service_generator impor
     generate_return_type,
     generate_services,
 )
-from openapi_python_generator.models import OpReturnType
-from openapi_python_generator.models import TypeConversion
+from ab_openapi_python_generator.models import OpReturnType
+from ab_openapi_python_generator.models import TypeConversion
 
 default_responses = {
     "200": Response(

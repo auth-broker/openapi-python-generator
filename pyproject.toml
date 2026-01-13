@@ -36,7 +36,7 @@ Documentation = "https://openapi-python-generator.readthedocs.io"
 Changelog = "https://github.com/auth-broker/openapi-python-generator/releases"
 
 [project.scripts]
-ab-openapi-python-generator = "openapi_python_generator.__main__:main"
+ab-openapi-python-generator = "ab_openapi_python_generator.__main__:main"
 
 [dependency-groups]
 dev = [
@@ -78,7 +78,7 @@ tests = ["tests", "*/tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["openapi_python_generator", "tests"]
+source = ["ab_openapi_python_generator", "tests"]
 
 [tool.coverage.report]
 show_missing = true
