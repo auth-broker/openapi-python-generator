@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Union
 import json
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from ..models import *
 from ..exceptions import HTTPException
@@ -134,9 +134,9 @@ AsyncGenerator[str | dict[str, Any], None]
         return None
 {% elif op.return_type.complex_type %}
 {% if op.return_type.list_type is none %}
-        return {{ op.return_type.type.converted_type }}.model_validate(body) if body is not None else {{ op.return_type.type.converted_type }}()
+        return TypeAdapter({{ op.return_type.type.converted_type }}).validate_python(body)
 {% else %}
-        return [{{ op.return_type.list_type }}.model_validate(item) for item in (body or [])]
+        return TypeAdapter(list[{{ op.return_type.list_type }}]).validate_python(body)
 {% endif %}
 {% else %}
         return body

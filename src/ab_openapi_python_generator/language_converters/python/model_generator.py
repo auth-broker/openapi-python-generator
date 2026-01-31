@@ -24,6 +24,9 @@ from openapi_pydantic.v3.v3_1 import (
 from openapi_pydantic.v3.v3_1 import (
     Schema as Schema31,
 )
+from openapi_pydantic.v3 import Operation, PathItem
+from openapi_pydantic.v3.v3_0 import Response as Response30
+from openapi_pydantic.v3.v3_1 import Response as Response31
 
 from ab_openapi_python_generator.common import PydanticVersion
 from ab_openapi_python_generator.language_converters.python import common
@@ -328,6 +331,117 @@ def _build_discriminator_bindings(components: Components) -> Dict[str, Discrimin
             )
 
     return bindings
+
+
+def _common_suffix(a: str, b: str) -> str:
+    # longest common suffix
+    i = 1
+    while i <= min(len(a), len(b)) and a[-i] == b[-i]:
+        i += 1
+    return a[-(i - 1) :] if i > 1 else ""
+
+
+def _common_suffix_many(names: List[str]) -> str:
+    if not names:
+        return ""
+    suf = names[0]
+    for n in names[1:]:
+        suf = _common_suffix(suf, n)
+        if not suf:
+            break
+    return suf
+
+
+def _alias_name_for_response_union(member_models: List[str], fallback: str) -> str:
+    suf = _common_suffix_many(member_models)
+    suf = common.normalize_symbol(suf)
+    if len(suf) >= 4:
+        return suf
+    return common.normalize_symbol(fallback)
+
+
+def generate_response_union_alias_models(
+    paths: Dict[str, PathItem],
+    pydantic_version: PydanticVersion = PydanticVersion.V2,
+) -> List[Model]:
+    """
+    Finds response schemas like:
+      content.application/json.schema.oneOf + discriminator
+    and emits a named alias module via alias_union.jinja2.
+    """
+    jinja_env = create_jinja_env()
+    out: Dict[str, Model] = {}
+
+    for path_name, path in paths.items():
+        for http_method in ["get", "post", "put", "delete", "patch", "head", "options", "trace"]:
+            op: Optional[Operation] = getattr(path, http_method, None)
+            if op is None or op.responses is None:
+                continue
+
+            for status_code, resp in op.responses.items():
+                if not str(status_code).startswith("2"):
+                    continue
+                if not isinstance(resp, (Response30, Response31)):
+                    continue
+
+                content = getattr(resp, "content", None)
+                if not isinstance(content, dict):
+                    continue
+
+                mt = content.get("application/json")
+                if mt is None:
+                    continue
+
+                schema = getattr(mt, "media_type_schema", None)
+                if not isinstance(schema, (Schema30, Schema31)):
+                    continue
+
+                disc_key = _get_discriminator_key(schema)
+                used = schema.oneOf if schema.oneOf is not None else schema.anyOf
+                if not disc_key or not used:
+                    continue
+
+                # Only support ref-only unions (your case)
+                member_models: List[str] = []
+                for sub in used:
+                    if not isinstance(sub, (Reference30, Reference31)):
+                        member_models = []
+                        break
+                    member_models.append(common.normalize_symbol(sub.ref.split("/")[-1]))
+                if len(member_models) < 2:
+                    continue
+
+                alias_name = _alias_name_for_response_union(
+                    member_models,
+                    fallback=f"{common.normalize_symbol(op.operationId or 'Response')}Response",
+                )
+
+                # de-dupe
+                if alias_name in out:
+                    continue
+
+                union_type = "Union[" + ", ".join(member_models) + "]"
+                member_imports = [f"from .{m} import {m}" for m in member_models]
+
+                alias_content = _render_union_alias_module(
+                    jinja_env=jinja_env,
+                    alias_name=alias_name,
+                    union_type=union_type,
+                    discriminator_key=disc_key,
+                    member_imports=member_imports,
+                )
+
+                # placeholder schema for Model.openapi_object requirement
+                placeholder_schema = Schema31() if isinstance(schema, Schema31) else Schema30()
+
+                out[alias_name] = Model(
+                    file_name=alias_name,
+                    content=alias_content,
+                    openapi_object=placeholder_schema,
+                    properties=[],
+                )
+
+    return list(out.values())
 
 
 def type_converter(  # noqa: C901
@@ -723,6 +837,30 @@ def generate_models(components: Components, pydantic_version: PydanticVersion = 
 
             # Schema property
             conv_property = _generate_property_from_schema(name, prop_name, prop_schema, schema_or_reference)
+
+            # --------------------------
+            # NEW: const / single-value enum -> Literal[...] with default
+            # --------------------------
+            if isinstance(prop_schema, (Schema30, Schema31)):
+                const_val = getattr(prop_schema, "const", None)
+                enum_vals = getattr(prop_schema, "enum", None)
+
+                literal_val = None
+                if const_val is not None:
+                    literal_val = const_val
+                elif isinstance(enum_vals, list) and len(enum_vals) == 1:
+                    literal_val = enum_vals[0]
+
+                if literal_val is not None:
+                    # make sure discriminator is present for unions: required + default
+                    conv_property.required = True
+                    conv_property.default = repr(literal_val)
+
+                    conv_property.type = TypeConversion(
+                        original_type=conv_property.type.original_type,
+                        converted_type=f"Literal[{repr(literal_val)}]",
+                        import_types=_dedupe_imports((conv_property.type.import_types or []) + ["from typing import Literal"]),
+                    )
 
             # If this model is a discriminated union member, and this property
             # is the discriminator key, make it a Literal[...] with a default
