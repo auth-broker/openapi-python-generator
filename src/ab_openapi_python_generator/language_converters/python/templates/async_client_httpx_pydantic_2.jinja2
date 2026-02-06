@@ -24,7 +24,7 @@ class AsyncClient(BaseModel):
     access_token: Optional[str] = None
 {% endif %}
 
-    def get_access_token(self) -> Optional[str]:
+    async def get_access_token(self) -> Optional[str]:
 {% if env_token_name is not none %}
         try:
             return os.environ["{{ env_token_name }}"]
@@ -34,7 +34,7 @@ class AsyncClient(BaseModel):
         return self.access_token
 {% endif %}
 
-    def set_access_token(self, value: str) -> None:
+    async def set_access_token(self, value: str) -> None:
 {% if env_token_name is not none %}
         raise Exception(
             "This client was generated with an environment variable for the access token. "
@@ -63,7 +63,7 @@ AsyncGenerator[str | dict[str, Any], None]
 {% else %}
             "Accept": "application/json",
 {% endif %}
-            "Authorization": f"Bearer { self.get_access_token() }",
+            "Authorization": f"Bearer { await self.get_access_token() }",
         }
 
         query_params: Dict[str, Any] = {
