@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
@@ -91,6 +92,24 @@ def is_schema_type(obj: Any) -> bool:
     return isinstance(obj, (Schema30, Schema31))
 
 
+def _common_suffix(a: str, b: str) -> str:
+    i = 1
+    while i <= min(len(a), len(b)) and a[-i] == b[-i]:
+        i += 1
+    return a[-(i - 1) :] if i > 1 else ""
+
+
+def _common_suffix_many(names: List[str]) -> str:
+    if not names:
+        return ""
+    suf = names[0]
+    for n in names[1:]:
+        suf = _common_suffix(suf, n)
+        if not suf:
+            break
+    return suf
+
+
 def operation_is_sse(op: Operation) -> bool:
     """Detect if an Operation advertises Server-Sent-Events (text/event-stream) in any 2xx response."""
     if not getattr(op, "responses", None):
@@ -100,7 +119,9 @@ def operation_is_sse(op: Operation) -> bool:
         try:
             if not str(status_code).startswith("2"):
                 continue
-        except Exception:
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.debug("Skipping response status key; conversion failed", exc_info=e)
             continue
 
         # Concrete Response object
@@ -309,6 +330,22 @@ def generate_return_type(operation: Operation) -> OpReturnType:
                 complex_type=True,
             )
         elif is_schema_type(inner_schema):
+            # NEW: if this is a discriminated response union of refs, prefer a named alias
+            disc = getattr(inner_schema, "discriminator", None)
+            used = getattr(inner_schema, "oneOf", None) or getattr(inner_schema, "anyOf", None)
+            disc_key = getattr(disc, "propertyName", None) if disc is not None else None
+
+            if disc_key and used and all(is_reference_type(s) for s in used):
+                member_models = [common.normalize_symbol(s.ref.split("/")[-1]) for s in used]  # type: ignore
+                alias_name = common.normalize_symbol(_common_suffix_many(member_models)) or "Response"
+
+                type_conv = TypeConversion(
+                    original_type="discriminated_union",
+                    converted_type=alias_name,
+                    import_types=None,
+                )
+                return OpReturnType(type=type_conv, status_code=good_responses[0][0], complex_type=True)
+
             converted_result = type_converter(inner_schema, True)  # type: ignore
             if "array" in converted_result.original_type and isinstance(converted_result.import_types, list):
                 matched = re.findall(r"List\[(.+)\]", converted_result.converted_type)

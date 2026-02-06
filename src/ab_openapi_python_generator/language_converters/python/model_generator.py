@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import click
+from openapi_pydantic.v3 import Operation, PathItem
 from openapi_pydantic.v3.v3_0 import (
     Components as Components30,
 )
 from openapi_pydantic.v3.v3_0 import (
     Reference as Reference30,
 )
+from openapi_pydantic.v3.v3_0 import Response as Response30
 from openapi_pydantic.v3.v3_0 import (
     Schema as Schema30,
 )
@@ -21,6 +23,7 @@ from openapi_pydantic.v3.v3_1 import (
 from openapi_pydantic.v3.v3_1 import (
     Reference as Reference31,
 )
+from openapi_pydantic.v3.v3_1 import Response as Response31
 from openapi_pydantic.v3.v3_1 import (
     Schema as Schema31,
 )
@@ -330,6 +333,117 @@ def _build_discriminator_bindings(components: Components) -> Dict[str, Discrimin
     return bindings
 
 
+def _common_suffix(a: str, b: str) -> str:
+    # longest common suffix
+    i = 1
+    while i <= min(len(a), len(b)) and a[-i] == b[-i]:
+        i += 1
+    return a[-(i - 1) :] if i > 1 else ""
+
+
+def _common_suffix_many(names: List[str]) -> str:
+    if not names:
+        return ""
+    suf = names[0]
+    for n in names[1:]:
+        suf = _common_suffix(suf, n)
+        if not suf:
+            break
+    return suf
+
+
+def _alias_name_for_response_union(member_models: List[str], fallback: str) -> str:
+    suf = _common_suffix_many(member_models)
+    suf = common.normalize_symbol(suf)
+    if len(suf) >= 4:
+        return suf
+    return common.normalize_symbol(fallback)
+
+
+def generate_response_union_alias_models(
+    paths: Dict[str, PathItem],
+    pydantic_version: PydanticVersion = PydanticVersion.V2,
+) -> List[Model]:
+    """
+    Finds response schemas like:
+      content.application/json.schema.oneOf + discriminator
+    and emits a named alias module via alias_union.jinja2.
+    """
+    jinja_env = create_jinja_env()
+    out: Dict[str, Model] = {}
+
+    for _path_name, path in paths.items():
+        for http_method in ["get", "post", "put", "delete", "patch", "head", "options", "trace"]:
+            op: Optional[Operation] = getattr(path, http_method, None)
+            if op is None or op.responses is None:
+                continue
+
+            for status_code, resp in op.responses.items():
+                if not str(status_code).startswith("2"):
+                    continue
+                if not isinstance(resp, (Response30, Response31)):
+                    continue
+
+                content = getattr(resp, "content", None)
+                if not isinstance(content, dict):
+                    continue
+
+                mt = content.get("application/json")
+                if mt is None:
+                    continue
+
+                schema = getattr(mt, "media_type_schema", None)
+                if not isinstance(schema, (Schema30, Schema31)):
+                    continue
+
+                disc_key = _get_discriminator_key(schema)
+                used = schema.oneOf if schema.oneOf is not None else schema.anyOf
+                if not disc_key or not used:
+                    continue
+
+                # Only support ref-only unions (your case)
+                member_models: List[str] = []
+                for sub in used:
+                    if not isinstance(sub, (Reference30, Reference31)):
+                        member_models = []
+                        break
+                    member_models.append(common.normalize_symbol(sub.ref.split("/")[-1]))
+                if len(member_models) < 2:
+                    continue
+
+                alias_name = _alias_name_for_response_union(
+                    member_models,
+                    fallback=f"{common.normalize_symbol(op.operationId or 'Response')}Response",
+                )
+
+                # de-dupe
+                if alias_name in out:
+                    continue
+
+                union_type = "Union[" + ", ".join(member_models) + "]"
+                member_imports = [f"from .{m} import {m}" for m in member_models]
+
+                alias_content = _render_union_alias_module(
+                    jinja_env=jinja_env,
+                    alias_name=alias_name,
+                    union_type=union_type,
+                    discriminator_key=disc_key,
+                    member_imports=member_imports,
+                )
+
+                # placeholder schema for Model.openapi_object requirement
+                placeholder_schema = Schema31() if isinstance(schema, Schema31) else Schema30()
+
+                out[alias_name] = Model(
+                    file_name=alias_name,
+                    content=alias_content,
+                    openapi_object=placeholder_schema,
+                    properties=[],
+                )
+
+    return list(out.values())
+
+
 def type_converter(  # noqa: C901
     schema: Union[Schema, Reference],
     required: bool = False,
@@ -413,14 +527,33 @@ def type_converter(  # noqa: C901
             converted_type = "Tuple[" + ",".join([i.converted_type for i in conversions]) + "]"
 
         converted_type = pre_type + converted_type + post_type
-        # Collect first import from referenced sub-schemas only (skip empty lists)
-        import_types = [
-            i.import_types[0] for i in conversions if i.import_types is not None and len(i.import_types) > 0
-        ] or None
+        # Collect *all* imports from sub-schemas (not just the first), then dedupe
+        import_types = (
+            _dedupe_imports(list(itertools.chain.from_iterable(i.import_types for i in conversions if i.import_types)))
+            or None
+        )
 
     elif schema.oneOf is not None or schema.anyOf is not None:
         used = schema.oneOf if schema.oneOf is not None else schema.anyOf
         used = used if used is not None else []
+        # Special-case inline nullable wrapper: (ref | null) => Optional[Ref]
+        if len(used) == 2:
+            ref = next((v for v in used if isinstance(v, (Reference30, Reference31))), None)
+            nul = next((v for v in used if isinstance(v, (Schema30, Schema31)) and _is_null_schema(v)), None)
+            if ref is not None and nul is not None:
+                import_type = common.normalize_symbol(ref.ref.split("/")[-1])
+                override = _REFERENCE_TYPE_OVERRIDES.get(import_type)
+                if override is not None:
+                    return TypeConversion(
+                        original_type=f"union<{ref.ref},null>",
+                        converted_type=override.converted_type,
+                        import_types=override.import_types,
+                    )
+                return TypeConversion(
+                    original_type=f"union<{ref.ref},null>",
+                    converted_type=f"Optional[{import_type}]",
+                    import_types=([f"from .{import_type} import {import_type}"] if import_type != model_name else None),
+                )
         conversions = []
         for sub_schema in used:
             if isinstance(sub_schema, Schema30) or isinstance(sub_schema, Schema31):
@@ -474,6 +607,7 @@ def type_converter(  # noqa: C901
         converted_type = pre_type + "bool" + post_type
     elif schema.type == "array" or str(schema.type) == "DataType.ARRAY":
         retVal = pre_type + "List["
+        item_imports: List[str] = []
         if isinstance(schema.items, Reference30) or isinstance(schema.items, Reference31):
             converted_reference = _generate_property_from_reference(
                 model_name or "", "", schema.items, schema, required
@@ -488,14 +622,35 @@ def type_converter(  # noqa: C901
             else:
                 type_value = str(type_str) if type_str is not None else "unknown"
             original_type = "array<" + type_value + ">"
-            retVal += type_converter(schema.items, True).converted_type
+            # IMPORTANT: propagate imports from the nested schema (e.g. Union[$ref...])
+            item_conv = type_converter(schema.items, True, model_name=model_name)
+            retVal += item_conv.converted_type
+            if item_conv.import_types:
+                item_imports.extend(item_conv.import_types)
         else:
             original_type = "array<unknown>"
             retVal += "Any"
 
         converted_type = retVal + "]" + post_type
+
+        # Merge imports from the items schema (when items is a Schema, not a Reference)
+        if item_imports:
+            import_types = _dedupe_imports((import_types or []) + item_imports)
     elif schema.type == "object" or str(schema.type) == "DataType.OBJECT":
-        converted_type = pre_type + "Dict[str, Any]" + post_type
+        # Support "map" objects: type=object + additionalProperties schema/ref
+        addl = getattr(schema, "additionalProperties", None)
+        if isinstance(addl, (Reference30, Reference31)):
+            # Dict[str, <ref>]
+            v = type_converter(addl, required=True, model_name=model_name)
+            converted_type = f"{pre_type}Dict[str, {v.converted_type}]{post_type}"
+            import_types = _dedupe_imports((import_types or []) + (v.import_types or [])) or None
+        elif isinstance(addl, (Schema30, Schema31)):
+            # Dict[str, <schema>], including Union[...] etc.
+            v = type_converter(addl, required=True, model_name=model_name)
+            converted_type = f"{pre_type}Dict[str, {v.converted_type}]{post_type}"
+            import_types = _dedupe_imports((import_types or []) + (v.import_types or [])) or None
+        else:
+            converted_type = pre_type + "Dict[str, Any]" + post_type
     elif schema.type == "null" or str(schema.type) == "DataType.NULL":
         converted_type = pre_type + "None" + post_type
     elif schema.type is None:
@@ -723,6 +878,32 @@ def generate_models(components: Components, pydantic_version: PydanticVersion = 
 
             # Schema property
             conv_property = _generate_property_from_schema(name, prop_name, prop_schema, schema_or_reference)
+
+            # --------------------------
+            # NEW: const / single-value enum -> Literal[...] with default
+            # --------------------------
+            if isinstance(prop_schema, (Schema30, Schema31)):
+                const_val = getattr(prop_schema, "const", None)
+                enum_vals = getattr(prop_schema, "enum", None)
+
+                literal_val = None
+                if const_val is not None:
+                    literal_val = const_val
+                elif isinstance(enum_vals, list) and len(enum_vals) == 1:
+                    literal_val = enum_vals[0]
+
+                if literal_val is not None:
+                    # make sure discriminator is present for unions: required + default
+                    conv_property.required = True
+                    conv_property.default = repr(literal_val)
+
+                    conv_property.type = TypeConversion(
+                        original_type=conv_property.type.original_type,
+                        converted_type=f"Literal[{repr(literal_val)}]",
+                        import_types=_dedupe_imports(
+                            (conv_property.type.import_types or []) + ["from typing import Literal"]
+                        ),
+                    )
 
             # If this model is a discriminated union member, and this property
             # is the discriminator key, make it a Literal[...] with a default
