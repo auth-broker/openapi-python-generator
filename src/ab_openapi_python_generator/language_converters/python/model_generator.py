@@ -588,6 +588,7 @@ def type_converter(  # noqa: C901
         converted_type = pre_type + "bool" + post_type
     elif schema.type == "array" or str(schema.type) == "DataType.ARRAY":
         retVal = pre_type + "List["
+        item_imports: List[str] = []
         if isinstance(schema.items, Reference30) or isinstance(schema.items, Reference31):
             converted_reference = _generate_property_from_reference(
                 model_name or "", "", schema.items, schema, required
@@ -602,12 +603,20 @@ def type_converter(  # noqa: C901
             else:
                 type_value = str(type_str) if type_str is not None else "unknown"
             original_type = "array<" + type_value + ">"
-            retVal += type_converter(schema.items, True).converted_type
+            # IMPORTANT: propagate imports from the nested schema (e.g. Union[$ref...])
+            item_conv = type_converter(schema.items, True, model_name=model_name)
+            retVal += item_conv.converted_type
+            if item_conv.import_types:
+                item_imports.extend(item_conv.import_types)
         else:
             original_type = "array<unknown>"
             retVal += "Any"
 
         converted_type = retVal + "]" + post_type
+
+        # Merge imports from the items schema (when items is a Schema, not a Reference)
+        if item_imports:
+            import_types = _dedupe_imports((import_types or []) + item_imports)
     elif schema.type == "object" or str(schema.type) == "DataType.OBJECT":
         converted_type = pre_type + "Dict[str, Any]" + post_type
     elif schema.type == "null" or str(schema.type) == "DataType.NULL":
