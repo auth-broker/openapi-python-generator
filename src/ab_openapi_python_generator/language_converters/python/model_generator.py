@@ -527,14 +527,32 @@ def type_converter(  # noqa: C901
             converted_type = "Tuple[" + ",".join([i.converted_type for i in conversions]) + "]"
 
         converted_type = pre_type + converted_type + post_type
-        # Collect first import from referenced sub-schemas only (skip empty lists)
-        import_types = [
-            i.import_types[0] for i in conversions if i.import_types is not None and len(i.import_types) > 0
-        ] or None
+        # Collect *all* imports from sub-schemas (not just the first), then dedupe
+        import_types = _dedupe_imports(
+            list(itertools.chain.from_iterable(i.import_types for i in conversions if i.import_types))
+        ) or None
 
     elif schema.oneOf is not None or schema.anyOf is not None:
         used = schema.oneOf if schema.oneOf is not None else schema.anyOf
         used = used if used is not None else []
+        # Special-case inline nullable wrapper: (ref | null) => Optional[Ref]
+        if len(used) == 2:
+            ref = next((v for v in used if isinstance(v, (Reference30, Reference31))), None)
+            nul = next((v for v in used if isinstance(v, (Schema30, Schema31)) and _is_null_schema(v)), None)
+            if ref is not None and nul is not None:
+                import_type = common.normalize_symbol(ref.ref.split("/")[-1])
+                override = _REFERENCE_TYPE_OVERRIDES.get(import_type)
+                if override is not None:
+                    return TypeConversion(
+                        original_type=f"union<{ref.ref},null>",
+                        converted_type=override.converted_type,
+                        import_types=override.import_types,
+                    )
+                return TypeConversion(
+                    original_type=f"union<{ref.ref},null>",
+                    converted_type=f"Optional[{import_type}]",
+                    import_types=([f"from .{import_type} import {import_type}"] if import_type != model_name else None),
+                )
         conversions = []
         for sub_schema in used:
             if isinstance(sub_schema, Schema30) or isinstance(sub_schema, Schema31):
@@ -618,7 +636,20 @@ def type_converter(  # noqa: C901
         if item_imports:
             import_types = _dedupe_imports((import_types or []) + item_imports)
     elif schema.type == "object" or str(schema.type) == "DataType.OBJECT":
-        converted_type = pre_type + "Dict[str, Any]" + post_type
+        # Support "map" objects: type=object + additionalProperties schema/ref
+        addl = getattr(schema, "additionalProperties", None)
+        if isinstance(addl, (Reference30, Reference31)):
+            # Dict[str, <ref>]
+            v = type_converter(addl, required=True, model_name=model_name)
+            converted_type = f"{pre_type}Dict[str, {v.converted_type}]{post_type}"
+            import_types = _dedupe_imports((import_types or []) + (v.import_types or [])) or None
+        elif isinstance(addl, (Schema30, Schema31)):
+            # Dict[str, <schema>], including Union[...] etc.
+            v = type_converter(addl, required=True, model_name=model_name)
+            converted_type = f"{pre_type}Dict[str, {v.converted_type}]{post_type}"
+            import_types = _dedupe_imports((import_types or []) + (v.import_types or [])) or None
+        else:
+            converted_type = pre_type + "Dict[str, Any]" + post_type
     elif schema.type == "null" or str(schema.type) == "DataType.NULL":
         converted_type = pre_type + "None" + post_type
     elif schema.type is None:
