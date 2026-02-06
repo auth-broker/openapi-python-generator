@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import click
+from openapi_pydantic.v3 import Operation, PathItem
 from openapi_pydantic.v3.v3_0 import (
     Components as Components30,
 )
 from openapi_pydantic.v3.v3_0 import (
     Reference as Reference30,
 )
+from openapi_pydantic.v3.v3_0 import Response as Response30
 from openapi_pydantic.v3.v3_0 import (
     Schema as Schema30,
 )
@@ -21,12 +23,10 @@ from openapi_pydantic.v3.v3_1 import (
 from openapi_pydantic.v3.v3_1 import (
     Reference as Reference31,
 )
+from openapi_pydantic.v3.v3_1 import Response as Response31
 from openapi_pydantic.v3.v3_1 import (
     Schema as Schema31,
 )
-from openapi_pydantic.v3 import Operation, PathItem
-from openapi_pydantic.v3.v3_0 import Response as Response30
-from openapi_pydantic.v3.v3_1 import Response as Response31
 
 from ab_openapi_python_generator.common import PydanticVersion
 from ab_openapi_python_generator.language_converters.python import common
@@ -372,7 +372,7 @@ def generate_response_union_alias_models(
     jinja_env = create_jinja_env()
     out: Dict[str, Model] = {}
 
-    for path_name, path in paths.items():
+    for _path_name, path in paths.items():
         for http_method in ["get", "post", "put", "delete", "patch", "head", "options", "trace"]:
             op: Optional[Operation] = getattr(path, http_method, None)
             if op is None or op.responses is None:
@@ -528,9 +528,10 @@ def type_converter(  # noqa: C901
 
         converted_type = pre_type + converted_type + post_type
         # Collect *all* imports from sub-schemas (not just the first), then dedupe
-        import_types = _dedupe_imports(
-            list(itertools.chain.from_iterable(i.import_types for i in conversions if i.import_types))
-        ) or None
+        import_types = (
+            _dedupe_imports(list(itertools.chain.from_iterable(i.import_types for i in conversions if i.import_types)))
+            or None
+        )
 
     elif schema.oneOf is not None or schema.anyOf is not None:
         used = schema.oneOf if schema.oneOf is not None else schema.anyOf
@@ -899,7 +900,9 @@ def generate_models(components: Components, pydantic_version: PydanticVersion = 
                     conv_property.type = TypeConversion(
                         original_type=conv_property.type.original_type,
                         converted_type=f"Literal[{repr(literal_val)}]",
-                        import_types=_dedupe_imports((conv_property.type.import_types or []) + ["from typing import Literal"]),
+                        import_types=_dedupe_imports(
+                            (conv_property.type.import_types or []) + ["from typing import Literal"]
+                        ),
                     )
 
             # If this model is a discriminated union member, and this property

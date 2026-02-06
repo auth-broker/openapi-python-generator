@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from jinja2 import ChoiceLoader, Environment, FileSystemLoader
+from jinja2 import ChoiceLoader, Environment, FileSystemLoader, select_autoescape
 
 from . import common
 
@@ -28,7 +28,7 @@ def create_jinja_env():
             if custom_template_path is not None
             else FileSystemLoader(TEMPLATE_PATH)
         ),
-        autoescape=False,
+        autoescape=select_autoescape(default_for_string=False),
         trim_blocks=True,
         lstrip_blocks=True,
     )

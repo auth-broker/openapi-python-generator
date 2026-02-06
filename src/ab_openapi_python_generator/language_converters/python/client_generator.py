@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
@@ -118,7 +119,9 @@ def operation_is_sse(op: Operation) -> bool:
         try:
             if not str(status_code).startswith("2"):
                 continue
-        except Exception:
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.debug("Skipping response status key; conversion failed", exc_info=e)
             continue
 
         # Concrete Response object
