@@ -13,6 +13,7 @@ from ab_openapi_python_generator.language_converters.python.exception_generator 
 )
 from ab_openapi_python_generator.language_converters.python.model_generator import (
     generate_models,
+    generate_response_union_alias_models,
 )
 from ab_openapi_python_generator.models import ConversionResult, LibraryConfig
 
@@ -39,6 +40,14 @@ def generator(
         models = generate_models(data.components, pydantic_version)
     else:
         models = []
+
+    # Generate response union alias models (e.g. AuthorizeResponse) from paths
+    # so client return types that reference those aliases have corresponding
+    # model modules available in the output.
+    if data.paths is not None:
+        resp_alias_models = generate_response_union_alias_models(data.paths, pydantic_version)
+        if resp_alias_models:
+            models.extend(resp_alias_models)
 
     if data.paths is not None:
         clients = generate_clients(data, data.paths, library_config, env_token_name, pydantic_version)
