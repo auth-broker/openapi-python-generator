@@ -57,14 +57,19 @@ AsyncGenerator[str | dict[str, Any], None]
         path = f"{{ op.path_name }}"
 
         headers = {
+{% if op.body_param %}
             "Content-Type": "application/json",
+{% endif %}
 {% if op.is_sse %}
             "Accept": "text/event-stream",
 {% else %}
             "Accept": "application/json",
 {% endif %}
-            "Authorization": f"Bearer { await self.get_access_token() }",
         }
+
+        _token = await self.get_access_token()
+        if _token:
+            headers["Authorization"] = f"Bearer {_token}"
 
         query_params: Dict[str, Any] = {
 {% for qp in op.query_params %}

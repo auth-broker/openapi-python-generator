@@ -757,16 +757,21 @@ def _generate_property_from_schema(
     """
     required = parent_schema is not None and parent_schema.required is not None and name in parent_schema.required
 
-    import_type = None
+    # Pick up OpenAPI default (if present)
+    default_val = getattr(schema, "default", None)
+
     if required:
-        import_type = [] if name == model_name else [name]
+        rendered_default = None
+    else:
+        # If OpenAPI provides a default, use it. Otherwise fall back to None.
+        rendered_default = repr(default_val) if default_val is not None else "None"
 
     return Property(
         name=name,
         type=type_converter(schema, required, model_name),
         required=required,
-        default=None if required else "None",
-        import_type=import_type,
+        default=rendered_default,
+        import_type=None if not required else ([] if name == model_name else [name]),
     )
 
 

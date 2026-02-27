@@ -144,38 +144,46 @@ HTTP_OPERATIONS = ["get", "post", "put", "delete", "options", "head", "patch", "
 def generate_body_param(operation: Operation) -> Union[str, None]:
     if operation.requestBody is None:
         return None
-    else:
-        if isinstance(operation.requestBody, Reference30) or isinstance(operation.requestBody, Reference31):
-            return "data.dict()"
 
-        if operation.requestBody.content is None:
-            return None  # pragma: no cover
+    # If requestBody is a $ref, it will be a Pydantic model instance in the client.
+    if isinstance(operation.requestBody, (Reference30, Reference31)):
+        return "data.model_dump(by_alias=True, exclude_none=True)"
 
-        if operation.requestBody.content.get("application/json") is None:
-            return None  # pragma: no cover
+    rb_content = getattr(operation.requestBody, "content", None)
+    if rb_content is None:
+        return None  # pragma: no cover
 
-        media_type = operation.requestBody.content.get("application/json")
+    if rb_content.get("application/json") is None:
+        return None  # pragma: no cover
 
-        if media_type is None:
-            return None  # pragma: no cover
+    media_type = rb_content.get("application/json")
+    if media_type is None:
+        return None  # pragma: no cover
 
-        if isinstance(media_type.media_type_schema, (Reference, Reference30, Reference31)):
-            return "data.dict()"
-        elif hasattr(media_type.media_type_schema, "ref"):
-            # Handle Reference objects from different OpenAPI versions
-            return "data.dict()"
-        elif isinstance(media_type.media_type_schema, (Schema, Schema30, Schema31)):
-            schema = media_type.media_type_schema
-            if schema.type == "array":
-                return "[i.dict() for i in data]"
-            elif schema.type == "object":
-                return "data"
-            else:
-                raise Exception(f"Unsupported schema type for request body: {schema.type}")  # pragma: no cover
-        else:
-            raise Exception(
-                f"Unsupported schema type for request body: {type(media_type.media_type_schema)}"
-            )  # pragma: no cover
+    mts = getattr(media_type, "media_type_schema", None)
+    if mts is None:
+        return None  # pragma: no cover
+
+    # $ref schema -> model
+    if isinstance(mts, (Reference, Reference30, Reference31)) or hasattr(mts, "ref"):
+        return "data.model_dump(by_alias=True, exclude_none=True)"
+
+    # Concrete schema
+    if isinstance(mts, (Schema, Schema30, Schema31)):
+        schema = mts
+
+        if schema.type == "array":
+            # List of models or primitives
+            return "[i.model_dump(by_alias=True, exclude_none=True) if hasattr(i, 'model_dump') else i for i in data]"
+
+        if schema.type == "object":
+            # Model or dict-like
+            return "data.model_dump(by_alias=True, exclude_none=True) if hasattr(data, 'model_dump') else data"
+
+        # Primitive (string/int/etc.)
+        return "data"
+
+    raise Exception(f"Unsupported schema type for request body: {type(mts)}")  # pragma: no cover
 
 
 def generate_params(operation: Operation) -> str:
