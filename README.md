@@ -28,6 +28,22 @@ __Documentation:__ [here][documentation]
 
 ---
 
+## Migration from auth-broker
+
+As of `pydantic-openapi-generator` version `2.2.8`, this package has moved out
+of the `auth-broker` organisation, been renamed, and had its import namespace
+updated.
+
+| Item | Previous | Current |
+| --- | --- | --- |
+| GitHub repository | [`auth-broker/openapi-python-generator`](https://github.com/auth-broker/openapi-python-generator) | [`mattcoulter7/pydantic-openapi-generator`](https://github.com/mattcoulter7/pydantic-openapi-generator) |
+| PyPI package | [`ab-openapi-python-generator`](https://pypi.org/project/ab-openapi-python-generator/) | [`pydantic-openapi-generator`](https://pypi.org/project/pydantic-openapi-generator/) |
+| CLI command | `ab-openapi-python-generator` | `pydantic-openapi-generator` |
+| Import namespace | `ab_openapi_python_generator` | `pydantic_openapi_generator` |
+
+The old PyPI package is retained as an archived historical package. New work
+should use `pydantic-openapi-generator` and `pydantic_openapi_generator`.
+
 ## Features
 
 - __Ease of use__. Provide input, output and the library, and the generator will do the rest.
