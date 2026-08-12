@@ -7,9 +7,9 @@ you need to do is to actually install the generator. You can do so via pip
 or any other package manager.
 
 <div id="termynal" data-termynal data-termynal class="use-termynal" data-ty-typeDelay="40" data-ty-lineDelay="700">
-    <span data-ty="input">pip install openapi-python-generator --upgrade</span>
+    <span data-ty="input">pip install pydantic-openapi-generator --upgrade</span>
     <span data-ty="progress"></span>
-    <span data-ty>Successfully installed openapi-python-generator</span>
+    <span data-ty>Successfully installed pydantic-openapi-generator</span>
 </div>
 
 For this tutorial, we'll use the `test_api.json` file contained within the test
@@ -22,8 +22,8 @@ suite of the generator. It has the following structure:
 {
   "openapi": "3.0.2",
   "info": {
-    "title": "openapi-python-generator test api",
-    "description": "API Schema for openapi-python-generator test api",
+    "title": "pydantic-openapi-generator test api",
+    "description": "API Schema for pydantic-openapi-generator test api",
     "version": "1.0.0",
     "x-logo": {
       "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"
@@ -605,8 +605,8 @@ suite of the generator. It has the following structure:
 Lets run the generator on this file:
 
 <div id="termynal" data-termynal data-termynal class="use-termynal" data-ty-typeDelay="40" data-ty-lineDelay="700">
-    <span data-ty="input">openapi-python-generator https://raw.githubusercontent.com/MarcoMuellner/openapi-python-generator/main/tests/test_data/test_api.json testclient</span>
-    <span data-ty>Generating data from https://raw.githubusercontent.com/MarcoMuellner/openapi-python-generator/main/tests/test_data/test_api.json</span>
+    <span data-ty="input">pydantic-openapi-generator https://raw.githubusercontent.com/mattcoulter7/pydantic-openapi-generator/main/tests/test_data/test_api.json testclient</span>
+    <span data-ty>Generating data from https://raw.githubusercontent.com/mattcoulter7/pydantic-openapi-generator/main/tests/test_data/test_api.json</span>
 </div>
 
 This will result in the folder structure as denoted in the
@@ -633,11 +633,9 @@ file:
 
 
     class EnumComponent(str, Enum):
-
         enumvalue1 = "EnumValue1"
         enumvalue2 = "EnumValue2"
         enumvalue3 = "EnumValue3"
-
     ```
 
 This is pretty straight forward, but what about the pydantic models? Lets
@@ -746,7 +744,6 @@ therefore reflected in the model.
         ...
         created_at: Optional[str] = None
         ...
-
     ```
 
 Hence, we can also directly use the json output from the service requests
@@ -787,13 +784,15 @@ only sync (for __requests__) or only async (for __aiohttp__) services.
 === "async_general_service.py"
     ``` py
     ...
+
+
     async def async_root__get() -> RootResponse:
         base_url = APIConfig().base_url
         path = f"/"
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": f"Bearer { APIConfig().get_access_token() }",
+            "Authorization": f"Bearer {APIConfig().get_access_token()}",
         }
         query_params = {}
 
@@ -808,19 +807,23 @@ only sync (for __requests__) or only async (for __aiohttp__) services.
         if response.status_code != 200:
             raise Exception(f" failed with status code: {response.status_code}")
         return RootResponse(**response.json())
+
+
     ...
     ```
 
 === "general_service.py"
     ``` py
     ...
+
+
     def root__get() -> RootResponse:
         base_url = APIConfig().base_url
         path = f"/"
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": f"Bearer { APIConfig().get_access_token() }",
+            "Authorization": f"Bearer {APIConfig().get_access_token()}",
         }
         query_params = {}
 
@@ -835,6 +838,8 @@ only sync (for __requests__) or only async (for __aiohttp__) services.
         if response.status_code != 200:
             raise Exception(f" failed with status code: {response.status_code}")
         return RootResponse(**response.json())
+
+
     ...
     ```
 
@@ -860,10 +865,10 @@ Paths are automatically created from the specification. No need to worry about t
 ```py
 ...
 headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": f"Bearer { APIConfig.get_access_token() }",
-        }
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Authorization": f"Bearer {APIConfig.get_access_token()}",
+}
 query_params = {}
 ...
 ```

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from ab_openapi_python_generator.generate_data import generate_data
-from ab_openapi_python_generator.common import HTTPLibrary
-from ab_openapi_python_generator.parsers import parse_openapi_3_1
+from pydantic_openapi_generator.generate_data import generate_data
+from pydantic_openapi_generator.common import HTTPLibrary
+from pydantic_openapi_generator.parsers import parse_openapi_3_1
 
 
 class TestOpenAPI31SupportedFeatures:
@@ -436,7 +436,7 @@ class TestOpenAPI31Coverage:
         },
     }
 
-    from ab_openapi_python_generator.parsers import parse_openapi_3_0
+    from pydantic_openapi_generator.parsers import parse_openapi_3_0
 
     parsed_30 = parse_openapi_3_0(spec_30_no_const)
 

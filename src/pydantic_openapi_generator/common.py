@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Dict, Optional
 
-from ab_openapi_python_generator.models import LibraryConfig
+from pydantic_openapi_generator.models import LibraryConfig
 
 
 class HTTPLibrary(str, Enum):

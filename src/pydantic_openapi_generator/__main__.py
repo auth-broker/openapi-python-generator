@@ -2,9 +2,9 @@ from typing import Optional
 
 import click
 
-from ab_openapi_python_generator import __version__
-from ab_openapi_python_generator.common import Formatter, HTTPLibrary, PydanticVersion
-from ab_openapi_python_generator.generate_data import generate_data
+from pydantic_openapi_generator import __version__
+from pydantic_openapi_generator.common import Formatter, HTTPLibrary, PydanticVersion
+from pydantic_openapi_generator.generate_data import generate_data
 
 
 @click.command()

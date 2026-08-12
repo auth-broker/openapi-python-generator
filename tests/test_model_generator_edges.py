@@ -1,8 +1,8 @@
 import pytest
 from openapi_pydantic.v3 import Schema, DataType
 
-from ab_openapi_python_generator.language_converters.python import common
-from ab_openapi_python_generator.language_converters.python.model_generator import (
+from pydantic_openapi_generator.language_converters.python import common
+from pydantic_openapi_generator.language_converters.python.model_generator import (
     type_converter,
 )
 

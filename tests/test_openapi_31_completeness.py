@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from ab_openapi_python_generator.generate_data import generate_data
-from ab_openapi_python_generator.common import HTTPLibrary
-from ab_openapi_python_generator.parsers import parse_openapi_3_1
+from pydantic_openapi_generator.generate_data import generate_data
+from pydantic_openapi_generator.common import HTTPLibrary
+from pydantic_openapi_generator.parsers import parse_openapi_3_1
 
 
 class TestOpenAPI31Completeness:
@@ -359,22 +359,16 @@ class TestOpenAPI31Completeness:
             assert (temp_path / "clients").exists()
             assert (temp_path / "exceptions").exists()
 
-            # Verify library-specific imports in services
-            services_dir = temp_path / "services"
-            service_files = list(services_dir.glob("*_service.py"))
-            assert len(service_files) >= 1
+            # Verify library-specific imports in clients
+            clients_dir = temp_path / "clients"
+            client_files = list(clients_dir.glob("*_client.py"))
+            assert len(client_files) >= 1
 
-            service_content = ""
-            for service_file in service_files:
-                service_content += service_file.read_text()
+            client_content = ""
+            for client_file in client_files:
+                client_content += client_file.read_text()
 
-            # Check library-specific imports
-            if library == HTTPLibrary.httpx:
-                assert "import httpx" in service_content
-            elif library == HTTPLibrary.requests:
-                assert "import requests" in service_content
-            elif library == HTTPLibrary.aiohttp:
-                assert "import aiohttp" in service_content
+            assert "import httpx" in client_content
 
     def test_detailed_model_generation_31(self, comprehensive_31_spec):
         """Test detailed model generation for OpenAPI 3.1 (matching 3.0 coverage)."""

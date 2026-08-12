@@ -1,23 +1,23 @@
-# Openapi Python Generator
+# Pydantic OpenAPI Generator
 
-[![PyPI](https://img.shields.io/pypi/v/openapi-python-generator.svg)][pypi_]
-[![Status](https://img.shields.io/pypi/status/openapi-python-generator.svg)][status]
-[![Python Version](https://img.shields.io/pypi/pyversions/openapi-python-generator)][python version]
-[![License](https://img.shields.io/pypi/l/openapi-python-generator)][license]
+[![PyPI](https://img.shields.io/pypi/v/pydantic-openapi-generator.svg)][pypi_]
+[![Status](https://img.shields.io/pypi/status/pydantic-openapi-generator.svg)][status]
+[![Python Version](https://img.shields.io/pypi/pyversions/pydantic-openapi-generator)][python version]
+[![License](https://img.shields.io/pypi/l/pydantic-openapi-generator)][license]
 
 [![](https://img.shields.io/static/v1?label=documentation&message=enabled&color=<COLOR>)][documentation]
-[![Tests](https://github.com/auth-broker/openapi-python-generator/workflows/Tests/badge.svg)][tests]
-[![Codecov](https://codecov.io/gh/auth-broker/openapi-python-generator/branch/main/graph/badge.svg)][codecov]
+[![Tests](https://github.com/mattcoulter7/pydantic-openapi-generator/workflows/Tests/badge.svg)][tests]
+[![Codecov](https://codecov.io/gh/mattcoulter7/pydantic-openapi-generator/branch/main/graph/badge.svg)][codecov]
 
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)][pre-commit]
 [![Black](https://img.shields.io/badge/code%20style-black-000000.svg)][black]
 
-[pypi_]: https://pypi.org/project/openapi-python-generator/
-[status]: https://pypi.org/project/openapi-python-generator/
-[python version]: https://pypi.org/project/openapi-python-generator
-[documentation]: https://marcomuellner.github.io/openapi-python-generator/
-[tests]: https://github.com/MarcoMuellner/openapi-python-generator/actions?workflow=Tests
-[codecov]: https://app.codecov.io/gh/MarcoMuellner/openapi-python-generator
+[pypi_]: https://pypi.org/project/pydantic-openapi-generator/
+[status]: https://pypi.org/project/pydantic-openapi-generator/
+[python version]: https://pypi.org/project/pydantic-openapi-generator
+[documentation]: https://github.com/mattcoulter7/pydantic-openapi-generator
+[tests]: https://github.com/mattcoulter7/pydantic-openapi-generator/actions/workflows/ci.yaml
+[codecov]: https://app.codecov.io/gh/mattcoulter7/pydantic-openapi-generator
 [pre-commit]: https://github.com/pre-commit/pre-commit
 [black]: https://github.com/psf/black
 
@@ -47,8 +47,8 @@ should use `pydantic-openapi-generator` and `pydantic_openapi_generator`.
 ## Features
 
 - __Ease of use__. Provide input, output and the library, and the generator will do the rest.
-- __Type safety and type hinting.__ __OpenAPI python generator__ makes heavy use of pydantic models to provide type-safe data structures.
-- __Support for multiple rest frameworks.__ __OpenAPI python generator__ currently supports the following:
+- __Type safety and type hinting.__ __Pydantic OpenAPI Generator__ makes heavy use of pydantic models to provide type-safe data structures.
+- __Support for multiple rest frameworks.__ __Pydantic OpenAPI Generator__ currently supports the following:
     - [httpx](https://pypi.org/project/httpx/)
     - [requests](https://pypi.org/project/requests/)
     - [aiohttp](https://pypi.org/project/aiohttp/)
@@ -59,14 +59,14 @@ should use `pydantic-openapi-generator` and `pydantic_openapi_generator`.
 
 ## Requirements
 
-- Python 3.7+
+- Python 3.12+
 
 ## Installation
 
-You can install _Openapi Python Generator_ via [pip] from [PyPI]:
+You can install _Pydantic OpenAPI Generator_ via [pip] from [PyPI]:
 
 ```console
-$ pip install ab-openapi-python-generator
+$ pip install pydantic-openapi-generator
 ```
 
 ## Usage
@@ -105,11 +105,11 @@ This project was generated from [@cjolowicz]'s [Hypermodern Python Cookiecutter]
 [@cjolowicz]: https://github.com/cjolowicz
 [pypi]: https://pypi.org/
 [hypermodern python cookiecutter]: https://github.com/cjolowicz/cookiecutter-hypermodern-python
-[file an issue]: https://github.com/MarcoMuellner/openapi-python-generator/issues
+[file an issue]: https://github.com/mattcoulter7/pydantic-openapi-generator/issues
 [pip]: https://pip.pypa.io/
 
 <!-- github-only -->
 
-[license]: https://github.com/MarcoMuellner/openapi-python-generator/blob/main/LICENSE
-[contributor guide]: https://github.com/MarcoMuellner/openapi-python-generator/blob/main/CONTRIBUTING.md
-[Quick start page]: https://marcomuellner.github.io/openapi-python-generator/quick_start/
+[license]: https://github.com/mattcoulter7/pydantic-openapi-generator/blob/main/LICENSE
+[contributor guide]: https://github.com/mattcoulter7/pydantic-openapi-generator/blob/main/CONTRIBUTING.md
+[Quick start page]: https://github.com/mattcoulter7/pydantic-openapi-generator#usage
