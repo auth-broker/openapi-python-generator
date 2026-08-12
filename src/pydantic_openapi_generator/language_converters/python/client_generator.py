@@ -38,17 +38,17 @@ from openapi_pydantic.v3.v3_1 import (
 )
 from openapi_pydantic.v3.v3_1.parameter import Parameter as Parameter31
 
-from ab_openapi_python_generator.common import PydanticVersion
-from ab_openapi_python_generator.language_converters.python import common
-from ab_openapi_python_generator.language_converters.python.jinja_config import (
+from pydantic_openapi_generator.common import PydanticVersion
+from pydantic_openapi_generator.language_converters.python import common
+from pydantic_openapi_generator.language_converters.python.jinja_config import (
     ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
     SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
     create_jinja_env,
 )
-from ab_openapi_python_generator.language_converters.python.model_generator import (
+from pydantic_openapi_generator.language_converters.python.model_generator import (
     type_converter,
 )
-from ab_openapi_python_generator.models import (
+from pydantic_openapi_generator.models import (
     LibraryConfig,
     Model,
     OpReturnType,

@@ -134,9 +134,9 @@ def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
     openapi_schema = get_openapi(
-        title="openapi-python-generator test api",
+        title="pydantic-openapi-generator test api",
         version="1.0.0",
-        description="API Schema for openapi-python-generator test api",
+        description="API Schema for pydantic-openapi-generator test api",
         routes=app.routes,
     )
     openapi_schema["info"]["x-logo"] = {

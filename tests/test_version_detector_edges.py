@@ -1,6 +1,6 @@
 import pytest
 
-from ab_openapi_python_generator.version_detector import (
+from pydantic_openapi_generator.version_detector import (
     detect_openapi_version,
     is_openapi_30,
     is_openapi_31,

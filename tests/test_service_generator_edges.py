@@ -5,8 +5,8 @@ pytest.skip(
 )
 
 from openapi_pydantic.v3 import Response, MediaType, Schema, DataType, Operation
-from ab_openapi_python_generator.language_converters.python import service_generator
-from ab_openapi_python_generator.models import OpReturnType
+from pydantic_openapi_generator.language_converters.python import service_generator
+from pydantic_openapi_generator.models import OpReturnType
 
 
 def test_is_schema_type_helper():

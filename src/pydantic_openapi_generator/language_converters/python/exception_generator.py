@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from ab_openapi_python_generator.language_converters.python.jinja_config import (
+from pydantic_openapi_generator.language_converters.python.jinja_config import (
     HTTP_EXCEPTION_TEMPLATE,
     create_jinja_env,
 )
-from ab_openapi_python_generator.models import Model
+from pydantic_openapi_generator.models import Model
 
 
 def generate_exceptions() -> list[Model]:

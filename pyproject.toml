@@ -1,12 +1,12 @@
 [project]
-name = "ab-openapi-python-generator"
+name = "pydantic-openapi-generator"
 version = "2.2.7"
 description = "Openapi Python Generator"
 authors = [
     { name = "Marco Müllner", email = "muellnermarco@gmail.com" },
     { name = "Matt Coulter", email = "mattcoul7@gmail.com" },
 ]
-requires-python = ">=3.9,<4"
+requires-python = ">=3.12,<4"
 readme = "README.md"
 license = "MIT"
 keywords = [
@@ -30,22 +30,22 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/auth-broker/openapi-python-generator"
-Repository = "https://github.com/auth-broker/openapi-python-generator"
-Documentation = "https://openapi-python-generator.readthedocs.io"
-Changelog = "https://github.com/auth-broker/openapi-python-generator/releases"
+Homepage = "https://github.com/mattcoulter7/pydantic-openapi-generator"
+Repository = "https://github.com/mattcoulter7/pydantic-openapi-generator"
+Documentation = "https://github.com/mattcoulter7/pydantic-openapi-generator"
+Changelog = "https://github.com/mattcoulter7/pydantic-openapi-generator/releases"
 
 [project.scripts]
-ab-openapi-python-generator = "ab_openapi_python_generator.__main__:main"
+pydantic-openapi-generator = "pydantic_openapi_generator.__main__:main"
 
 [dependency-groups]
 dev = [
     "debugpy>=1.8.14,<2",
     "isort>=6.0.1,<7",
     "Pygments>=2.10.0",
-    "coverage[toml]>=6.4.1,<7",
+    "coverage[toml]>=7.10.0,<8",
     "darglint>=1.8.1",
-    "ruff>=0.12.12",
+    "ruff>=0.12.12,<0.17",
     "furo>=2021.11.12",
     "ty>=0.0.1a20,<0.0.2",
     "pep8-naming>=0.10.1",
@@ -57,19 +57,24 @@ dev = [
     "typeguard>=2.13.3",
     "xdoctest[colors]>=0.15.10",
     "myst-parser>=0.16.1",
-    "pytest-cov>=3.0.0,<4",
-    "pytest-asyncio>=1.0.0,<2",
+    "pytest-cov>=7.1.0,<8",
+    "pytest-asyncio>=1.4.0,<2",
     "fastapi>=0.115.5,<0.116",
     "uvicorn>=0.18.1,<0.19",
     "respx>=0.22.0,<0.23",
     "aiohttp>=3.8.3,<4",
-    "responses>=0.25.8,<0.26",
-    "tox>=4.27.0,<5"
+    "responses>=0.25.8,<0.26"
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/pydantic_openapi_generator"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pydantic_openapi_generator"]
 
 
 [tool.coverage.paths]
@@ -78,7 +83,7 @@ tests = ["tests", "*/tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["ab_openapi_python_generator", "tests"]
+source = ["pydantic_openapi_generator", "tests"]
 
 [tool.coverage.report]
 show_missing = true

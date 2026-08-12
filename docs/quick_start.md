@@ -1,11 +1,11 @@
 # Quick start
 
-Make sure you have the latest version of `openapi-python-generator` installed.
+Make sure you have the latest version of `pydantic-openapi-generator` installed.
 
 <div id="termynal" data-termynal data-termynal class="use-termynal" data-ty-typeDelay="40" data-ty-lineDelay="700">
-    <span data-ty="input">pip install openapi-python-generator --upgrade</span>
+    <span data-ty="input">pip install pydantic-openapi-generator --upgrade</span>
     <span data-ty="progress"></span>
-    <span data-ty>Successfully installed openapi-python-generator</span>
+    <span data-ty>Successfully installed pydantic-openapi-generator</span>
 </div>
 
 ---
@@ -14,8 +14,8 @@ To call the generator, simply pass the OpenAPI spec (as a link or to a file), an
 you can also pass the library you would like to use.
 
 <div id="termynal" data-termynal data-termynal class="use-termynal" data-ty-typeDelay="40" data-ty-lineDelay="700">
-    <span data-ty="input">openapi-python-generator https://raw.githubusercontent.com/MarcoMuellner/openapi-python-generator/main/tests/test_data/test_api.json testclient</span>
-    <span data-ty>Generating data from https://raw.githubusercontent.com/MarcoMuellner/openapi-python-generator/main/tests/test_data/test_api.json</span>
+    <span data-ty="input">pydantic-openapi-generator https://raw.githubusercontent.com/mattcoulter7/pydantic-openapi-generator/main/tests/test_data/test_api.json testclient</span>
+    <span data-ty>Generating data from https://raw.githubusercontent.com/mattcoulter7/pydantic-openapi-generator/main/tests/test_data/test_api.json</span>
 </div>
 
 This will generate a folder called testclient, with the following structure (using the file above):
