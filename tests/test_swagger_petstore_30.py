@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ab_openapi_python_generator.generate_data import generate_data
-from ab_openapi_python_generator.version_detector import detect_openapi_version
-from ab_openapi_python_generator.parsers import parse_openapi_3_0
-from ab_openapi_python_generator.common import HTTPLibrary
+from pydantic_openapi_generator.generate_data import generate_data
+from pydantic_openapi_generator.version_detector import detect_openapi_version
+from pydantic_openapi_generator.parsers import parse_openapi_3_0
+from pydantic_openapi_generator.common import HTTPLibrary
 
 
 class TestSwaggerPetstore30:
@@ -128,7 +128,7 @@ class TestSwaggerPetstore30:
             # Check that files were generated
             assert (output_dir / "__init__.py").exists()
             assert (output_dir / "models").exists()
-            assert (output_dir / "services").exists()
+            assert (output_dir / "clients").exists()
             assert (output_dir / "exceptions").exists()
 
             # Check model files
@@ -149,14 +149,14 @@ class TestSwaggerPetstore30:
                     models_dir / model_file
                 ).exists(), f"Missing model file: {model_file}"
 
-            # Check service files
-            services_dir = output_dir / "services"
-            assert (services_dir / "__init__.py").exists()
+            # Check client files
+            clients_dir = output_dir / "clients"
+            assert (clients_dir / "__init__.py").exists()
 
-            # Should have service files for different tags
-            service_files = list(services_dir.glob("*.py"))
-            service_files = [f for f in service_files if f.name != "__init__.py"]
-            assert len(service_files) > 0, "No service files generated"
+            # Should have client files for different tags
+            client_files = list(clients_dir.glob("*.py"))
+            client_files = [f for f in client_files if f.name != "__init__.py"]
+            assert len(client_files) > 0, "No client files generated"
 
     @pytest.mark.parametrize("library", [HTTPLibrary.httpx, HTTPLibrary.requests])
     def test_petstore_30_with_different_libraries(self, petstore_30_spec_path, library):

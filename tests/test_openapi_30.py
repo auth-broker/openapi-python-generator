@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from ab_openapi_python_generator.generate_data import generate_data
-from ab_openapi_python_generator.version_detector import detect_openapi_version
-from ab_openapi_python_generator.parsers import parse_openapi_3_0
+from pydantic_openapi_generator.generate_data import generate_data
+from pydantic_openapi_generator.version_detector import detect_openapi_version
+from pydantic_openapi_generator.parsers import parse_openapi_3_0
 
 
 class TestOpenAPI30:
@@ -189,7 +189,7 @@ class TestOpenAPI30:
             # Check that files were generated
             assert (output_dir / "__init__.py").exists()
             assert (output_dir / "models").exists()
-            assert (output_dir / "services").exists()
+            assert (output_dir / "clients").exists()
             assert (output_dir / "exceptions").exists()
 
             # Check model structure
@@ -204,17 +204,17 @@ class TestOpenAPI30:
             user_model_files = [f for f in model_files if "User" in f.name]
             assert len(user_model_files) >= 1  # At least User.py should exist
 
-            # Check service structure
-            services_dir = output_dir / "services"
-            assert (services_dir / "__init__.py").exists()
-            service_files = list(services_dir.glob("*_service.py"))
-            assert len(service_files) >= 1
+            # Check client structure
+            clients_dir = output_dir / "clients"
+            assert (clients_dir / "__init__.py").exists()
+            client_files = list(clients_dir.glob("*_client.py"))
+            assert len(client_files) >= 1
 
             # Check that httpx is used (since we updated to latest)
-            service_content = ""
-            for service_file in service_files:
-                service_content += service_file.read_text()
-            assert "import httpx" in service_content
+            client_content = ""
+            for client_file in client_files:
+                client_content += client_file.read_text()
+            assert "import httpx" in client_content
 
     def test_parameter_handling_30(self, openapi_30_spec):
         """Test that path parameters in OpenAPI 3.0 are handled correctly."""

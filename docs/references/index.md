@@ -3,7 +3,7 @@
 ## CLI Interface
 
 ```console
-$ openapi-python-generator <spec> <output_folder> [library]
+$ pydantic-openapi-generator <spec> <output_folder> [library]
 ```
 Arguments:
 ```console

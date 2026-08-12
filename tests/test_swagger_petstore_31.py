@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ab_openapi_python_generator.generate_data import generate_data
-from ab_openapi_python_generator.version_detector import detect_openapi_version
-from ab_openapi_python_generator.parsers import parse_openapi_3_1
-from ab_openapi_python_generator.common import HTTPLibrary
+from pydantic_openapi_generator.generate_data import generate_data
+from pydantic_openapi_generator.version_detector import detect_openapi_version
+from pydantic_openapi_generator.parsers import parse_openapi_3_1
+from pydantic_openapi_generator.common import HTTPLibrary
 
 
 class TestSwaggerPetstore31:
@@ -169,14 +169,14 @@ class TestSwaggerPetstore31:
                     models_dir / model_file
                 ).exists(), f"Missing model file: {model_file}"
 
-            # Check service files
-            services_dir = output_dir / "services"
-            assert (services_dir / "__init__.py").exists()
+            # Check client files
+            clients_dir = output_dir / "clients"
+            assert (clients_dir / "__init__.py").exists()
 
-            # Should have service files for different tags
-            service_files = list(services_dir.glob("*.py"))
-            service_files = [f for f in service_files if f.name != "__init__.py"]
-            assert len(service_files) > 0, "No service files generated"
+            # Should have client files for different tags
+            client_files = list(clients_dir.glob("*.py"))
+            client_files = [f for f in client_files if f.name != "__init__.py"]
+            assert len(client_files) > 0, "No client files generated"
 
     @pytest.mark.parametrize("library", [HTTPLibrary.httpx, HTTPLibrary.requests])
     def test_petstore_31_with_different_libraries(self, petstore_31_spec_path, library):
@@ -236,8 +236,8 @@ class TestSwaggerPetstore31:
         for schema_name in expected_schemas:
             assert schema_name in schemas, f"Missing schema: {schema_name}"
 
-    def test_petstore_31_service_operations_basic(self, petstore_31_spec):
-        """Test basic service operations for Petstore 3.1."""
+    def test_petstore_31_client_operations_basic(self, petstore_31_spec):
+        """Test basic client operations for Petstore 3.1."""
         openapi_obj = parse_openapi_3_1(petstore_31_spec)
 
         assert openapi_obj.paths is not None

@@ -2,14 +2,14 @@
 
 _OpenAPI python generator, a modern way to generate clients for OpenAPI 3.0.0+ APIs_
 
-![](https://raw.githubusercontent.com/MarcoMuellner/openapi-python-generator/main/logo.png)
+![](https://raw.githubusercontent.com/mattcoulter7/pydantic-openapi-generator/main/logo.png)
 
-![Tests](https://github.com/MarcoMuellner/openapi-python-generator/workflows/Tests/badge.svg) ![Codecov](https://codecov.io/gh/MarcoMuellner/openapi-python-generator/branch/main/graph/badge.svg) ![PyPI](https://img.shields.io/pypi/v/openapi-python-generator.svg) ![Python Version](https://img.shields.io/pypi/pyversions/openapi-python-generator)
+![Tests](https://github.com/mattcoulter7/pydantic-openapi-generator/workflows/Tests/badge.svg) ![Codecov](https://codecov.io/gh/mattcoulter7/pydantic-openapi-generator/branch/main/graph/badge.svg) ![PyPI](https://img.shields.io/pypi/v/pydantic-openapi-generator.svg) ![Python Version](https://img.shields.io/pypi/pyversions/pydantic-openapi-generator)
 ---
 
 **Documentation**:
 
-**Source**: [https://github.com/MarcoMuellner/openapi-python-generator](https://github.com/MarcoMuellner/openapi-python-generator)
+**Source**: [https://github.com/mattcoulter7/pydantic-openapi-generator](https://github.com/mattcoulter7/pydantic-openapi-generator)
 
 ---
 

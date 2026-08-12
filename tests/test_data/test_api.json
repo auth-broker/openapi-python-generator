@@ -1,8 +1,8 @@
 {
   "openapi": "3.0.2",
   "info": {
-    "title": "openapi-python-generator test api",
-    "description": "API Schema for openapi-python-generator test api",
+    "title": "pydantic-openapi-generator test api",
+    "description": "API Schema for pydantic-openapi-generator test api",
     "version": "1.0.0",
     "x-logo": {
       "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"

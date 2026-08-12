@@ -1,5 +1,5 @@
 def test_jinja_no_autoescape():
-    from ab_openapi_python_generator.language_converters.python.jinja_config import (
+    from pydantic_openapi_generator.language_converters.python.jinja_config import (
         create_jinja_env,
     )
 

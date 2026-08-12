@@ -1,5 +1,0 @@
-# NOTE: UV_PUBLISH_USERNAME & UV_PUBLISH_PASSWORD are only required for testing
-#       publishing this package from local. However, please let the CD workflow
-#       handle production workflows.
-export UV_PUBLISH_USERNAME=
-export UV_PUBLISH_PASSWORD=

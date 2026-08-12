@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from ab_openapi_python_generator.generate_data import generate_data
-from ab_openapi_python_generator.common import HTTPLibrary
-from ab_openapi_python_generator.parsers import parse_openapi_3_1
+from pydantic_openapi_generator.generate_data import generate_data
+from pydantic_openapi_generator.common import HTTPLibrary
+from pydantic_openapi_generator.parsers import parse_openapi_3_1
 
 
 @pytest.mark.xfail(
@@ -426,7 +426,7 @@ def test_31_feature_parsing_vs_30():
         },
     }
 
-    from ab_openapi_python_generator.parsers import parse_openapi_3_0
+    from pydantic_openapi_generator.parsers import parse_openapi_3_0
 
     try:
         parsed = parse_openapi_3_0(openapi_30_spec)
