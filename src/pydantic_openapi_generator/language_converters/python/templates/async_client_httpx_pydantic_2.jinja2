@@ -48,24 +48,27 @@ class AsyncClient(BaseModel):
     async def {{ op.operation_id }}(self{% if op.params %}, {{ op.params }}{% endif %}) -> {%- if op.is_sse -%}
 AsyncGenerator[str | dict[str, Any], None]
 {%- else -%}
-{%- if op.return_type.type is none or op.return_type.type.converted_type is none -%}None
-{%- elif op.return_type.list_type is not none -%}list[{{ op.return_type.list_type }}]
-{%- else -%}{{ op.return_type.type.converted_type }}
-{%- endif -%}
+{{ op.return_type.return_type_hint or "None" }}
 {%- endif -%}:
         base_url = self.base_url
         path = f"{{ op.path_name }}"
 
         headers = {
-{% if op.body_param %}
+{% if op.request_body and op.request_body.content_type %}
+            "Content-Type": "{{ op.request_body.content_type }}",
+{% elif op.body_param and not op.request_body %}
             "Content-Type": "application/json",
 {% endif %}
 {% if op.is_sse %}
             "Accept": "text/event-stream",
 {% else %}
-            "Accept": "application/json",
+            "Accept": "{{ op.return_type.accept_content_types | join(', ') or 'application/json' }}",
 {% endif %}
+{% for hp in op.header_params %}
+            {{ hp }},
+{% endfor %}
         }
+        headers = {k: v for (k, v) in headers.items() if v is not None}
 
         _token = await self.get_access_token()
         if _token:
@@ -86,10 +89,20 @@ AsyncGenerator[str | dict[str, Any], None]
                 headers=headers,
                 params=query_params,
 {% if op.body_param %}
+{% if op.request_body and op.request_body.encoding == "json" %}
+                json={{ op.request_body.expression }},
+{% elif op.request_body and op.request_body.encoding == "multipart" %}
+                files={{ op.request_body.expression }},
+{% elif op.request_body and op.request_body.encoding == "form" %}
+                data={{ op.request_body.expression }},
+{% elif op.request_body and op.request_body.encoding in ["binary", "text"] %}
+                content={{ op.request_body.expression }},
+{% else %}
                 json={{ op.body_param }},
 {% endif %}
+{% endif %}
             ) as response:
-                if response.status_code != {{ op.return_type.status_code }}:
+                if response.status_code not in {{ op.return_type.accepted_status_codes or [op.return_type.status_code] }}:
                     raise HTTPException(
                         response.status_code,
                         f"{{ op.operation_id }} failed with status code: {response.status_code}",
@@ -123,29 +136,51 @@ AsyncGenerator[str | dict[str, Any], None]
                 headers=headers,
                 params=query_params,
 {% if op.body_param %}
+{% if op.request_body and op.request_body.encoding == "json" %}
+                json={{ op.request_body.expression }},
+{% elif op.request_body and op.request_body.encoding == "multipart" %}
+                files={{ op.request_body.expression }},
+{% elif op.request_body and op.request_body.encoding == "form" %}
+                data={{ op.request_body.expression }},
+{% elif op.request_body and op.request_body.encoding in ["binary", "text"] %}
+                content={{ op.request_body.expression }},
+{% else %}
                 json={{ op.body_param }},
+{% endif %}
 {% endif %}
             )
 
-        if response.status_code != {{ op.return_type.status_code }}:
+        if response.status_code not in {{ op.return_type.accepted_status_codes or [op.return_type.status_code] }}:
             raise HTTPException(
                 response.status_code,
                 f"{{ op.operation_id }} failed with status code: {response.status_code}",
             )
 
-        body = None if {{ op.return_type.status_code }} == 204 else response.json()
+        _response_content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+{% for variant in op.return_type.variants %}
+{% set same_status_variants = op.return_type.variants | selectattr("status_code", "equalto", variant.status_code) | list %}
+        if response.status_code == {{ variant.status_code }}{% if same_status_variants|length > 1 and variant.content_type %} and _response_content_type == "{{ variant.content_type }}"{% endif %}:
+{% if variant.body_kind == "empty" or variant.type is none or variant.type.converted_type is none %}
+            return None
+{% elif variant.body_kind == "binary" %}
+            return response.content
+{% elif variant.body_kind == "text" %}
+            return response.text
+{% elif variant.complex_type %}
+{% if variant.list_type is none %}
+            return TypeAdapter({{ variant.type.converted_type }}).validate_python(response.json())
+{% else %}
+            return TypeAdapter(list[{{ variant.list_type }}]).validate_python(response.json())
+{% endif %}
+{% else %}
+            return response.json()
+{% endif %}
 
-{% if op.return_type.type is none or op.return_type.type.converted_type is none %}
-        return None
-{% elif op.return_type.complex_type %}
-{% if op.return_type.list_type is none %}
-        return TypeAdapter({{ op.return_type.type.converted_type }}).validate_python(body)
-{% else %}
-        return TypeAdapter(list[{{ op.return_type.list_type }}]).validate_python(body)
-{% endif %}
-{% else %}
-        return body
-{% endif %}
+{% endfor %}
+        raise HTTPException(
+            response.status_code,
+            f"{{ op.operation_id }} failed with unsupported content type: {_response_content_type}",
+        )
 {% endif %}
 
 {% endfor %}
