@@ -48,8 +48,10 @@ class OpReturnType(BaseModel):
     complex_type: bool = False
     list_type: Optional[str] = None
     variants: List["ResponseVariant"] = Field(default_factory=list)
-    accepted_status_codes: List[int] = Field(default_factory=list)
     accept_content_types: List[str] = Field(default_factory=list)
+    unambiguous_content_handlers: List["ResponseContentHandler"] = Field(
+        default_factory=list
+    )
     return_type_hint: Optional[str] = None
 
 
@@ -60,6 +62,14 @@ class ResponseVariant(BaseModel):
     complex_type: bool = False
     list_type: Optional[str] = None
     body_kind: Literal["empty", "json", "text", "binary"] = "empty"
+
+
+class ResponseContentHandler(BaseModel):
+    content_type: str
+    type: Optional[TypeConversion] = None
+    complex_type: bool = False
+    list_type: Optional[str] = None
+    body_kind: Literal["json", "text", "binary"]
 
 
 class RequestBodyDefinition(BaseModel):

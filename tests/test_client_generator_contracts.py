@@ -263,6 +263,40 @@ def test_generated_clients_honor_openapi_request_response_contracts(
     assert download_request.headers["accept"] == "application/pdf"
 
 
+@pytest.mark.respx(assert_all_called=False, assert_all_mocked=True)
+@pytest.mark.parametrize("async_client", [False, True])
+def test_generated_clients_gracefully_decode_undocumented_successes(
+    generated_contract_package,
+    respx_mock,
+    async_client,
+):
+    respx_mock.get("http://testserver/things").mock(
+        return_value=httpx.Response(201, json={"unexpected": True})
+    )
+    respx_mock.post("http://testserver/upload").mock(
+        return_value=httpx.Response(201, json={"documentId": "doc-201"})
+    )
+
+    if async_client:
+        client_module = importlib.import_module(
+            f"{generated_contract_package}.clients.async_client"
+        )
+        client = client_module.AsyncClient()
+        ambiguous, upload = asyncio.run(_run_async_undocumented_successes(client))
+    else:
+        client_module = importlib.import_module(
+            f"{generated_contract_package}.clients.sync_client"
+        )
+        client = client_module.SyncClient()
+        ambiguous = client.getThing(X_Test_Header="required")
+        upload = client.uploadDocument(
+            data={"file": ("doc.txt", b"hello", "text/plain")}
+        )
+
+    assert ambiguous == {"unexpected": True}
+    assert upload.documentId == "doc-201"
+
+
 CONFIG_CONTENT = """
 parameters:
   - name: X-Test-Header
@@ -362,6 +396,14 @@ async def _run_async_configured_contract(client):
         dynamic_header="function-override",
         product_brand="AMI",
     )
+
+
+async def _run_async_undocumented_successes(client):
+    ambiguous = await client.getThing(X_Test_Header="required")
+    upload = await client.uploadDocument(
+        data={"file": ("doc.txt", b"hello", "text/plain")}
+    )
+    return ambiguous, upload
 
 
 def test_duplicate_configured_code_name_fails_generation():
