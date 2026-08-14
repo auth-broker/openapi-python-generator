@@ -7,6 +7,9 @@ from typing import Optional
 from openapi_pydantic.v3.v3_0 import OpenAPI
 
 from pydantic_openapi_generator.common import HTTPLibrary, PydanticVersion
+from pydantic_openapi_generator.config.generator_config import (
+    PydanticOpenAPIGeneratorConfig,
+)
 from pydantic_openapi_generator.language_converters.python.generator import (
     generator as base_generator,
 )
@@ -36,6 +39,7 @@ def generate_code_3_0(
     use_orjson: bool = False,
     custom_template_path: Optional[str] = None,
     pydantic_version: PydanticVersion = PydanticVersion.V2,
+    config: Optional[PydanticOpenAPIGeneratorConfig] = None,
 ) -> ConversionResult:
     """
     Generate Python code from OpenAPI 3.0 specification.
@@ -62,4 +66,5 @@ def generate_code_3_0(
         use_orjson=use_orjson,
         custom_template_path=custom_template_path,
         pydantic_version=pydantic_version,
+        config=config,
     )

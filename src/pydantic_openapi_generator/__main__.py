@@ -52,6 +52,12 @@ from pydantic_openapi_generator.generate_data import generate_data
     show_default=True,
     help="Option to choose which auto formatter is applied.",
 )
+@click.option(
+    "--config-path",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Optional YAML configuration for generated client parameters.",
+)
 @click.version_option(version=__version__)
 def main(
     source: str,
@@ -62,6 +68,7 @@ def main(
     custom_template_path: Optional[str] = None,
     pydantic_version: PydanticVersion = PydanticVersion.V2,
     formatter: Formatter = Formatter.BLACK,
+    config_path: Optional[str] = None,
 ) -> None:
     """
     Generate Python code from an OpenAPI 3.0+ specification.
@@ -78,6 +85,7 @@ def main(
         custom_template_path,
         pydantic_version,
         formatter,
+        config_path,
     )
 
 

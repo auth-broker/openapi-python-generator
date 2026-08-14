@@ -4,6 +4,9 @@ from openapi_pydantic.v3.v3_0 import OpenAPI as OpenAPI30
 from openapi_pydantic.v3.v3_1 import OpenAPI as OpenAPI31
 
 from pydantic_openapi_generator.common import PydanticVersion
+from pydantic_openapi_generator.config.generator_config import (
+    PydanticOpenAPIGeneratorConfig,
+)
 from pydantic_openapi_generator.language_converters.python import common
 from pydantic_openapi_generator.language_converters.python.client_generator import (
     generate_clients,
@@ -28,6 +31,7 @@ def generator(
     use_orjson: bool = False,
     custom_template_path: Optional[str] = None,
     pydantic_version: PydanticVersion = PydanticVersion.V2,
+    config: Optional[PydanticOpenAPIGeneratorConfig] = None,
 ) -> ConversionResult:
     """
     Generate Python code from an OpenAPI 3.0+ specification.
@@ -50,7 +54,7 @@ def generator(
             models.extend(resp_alias_models)
 
     if data.paths is not None:
-        clients = generate_clients(data, data.paths, library_config, env_token_name, pydantic_version)
+        clients = generate_clients(data, data.paths, library_config, env_token_name, pydantic_version, config)
     else:
         clients = []
 

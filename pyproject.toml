@@ -1,6 +1,6 @@
 [project]
 name = "pydantic-openapi-generator"
-version = "2.3.0"
+version = "2.4.0"
 description = "Openapi Python Generator"
 authors = [
     { name = "Marco Müllner", email = "muellnermarco@gmail.com" },
@@ -27,6 +27,7 @@ dependencies = [
     "openapi-pydantic>=0.5.1,<0.6",
     "pyyaml>=6.0.2,<7",
     "importlib-metadata>=8.7.0,<9",
+    "pydantic-di>=0.3.1",
 ]
 
 [project.urls]

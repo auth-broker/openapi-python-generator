@@ -39,6 +39,10 @@ from openapi_pydantic.v3.v3_1 import (
 from openapi_pydantic.v3.v3_1.parameter import Parameter as Parameter31
 
 from pydantic_openapi_generator.common import PydanticVersion
+from pydantic_openapi_generator.config.generator_config import (
+    PydanticOpenAPIGeneratorConfig,
+)
+from pydantic_openapi_generator.config.parameter_source import ParameterSource
 from pydantic_openapi_generator.language_converters.python import common
 from pydantic_openapi_generator.language_converters.python.jinja_config import (
     ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
@@ -49,6 +53,7 @@ from pydantic_openapi_generator.language_converters.python.model_generator impor
     type_converter,
 )
 from pydantic_openapi_generator.models import (
+    GeneratedParameter,
     LibraryConfig,
     Model,
     OpReturnType,
@@ -57,6 +62,15 @@ from pydantic_openapi_generator.models import (
     ServiceOperation,
     TypeConversion,
 )
+
+RESERVED_CLIENT_MEMBER_NAMES = {
+    "base_url",
+    "verify",
+    "access_token",
+    "get_access_token",
+    "set_access_token",
+    "model_config",
+}
 
 
 # Helper functions for isinstance checks across OpenAPI versions
@@ -222,6 +236,112 @@ def generate_body_param(operation: Operation) -> Union[str, None]:
     return None if request_body is None else request_body.expression
 
 
+def _resolve_parameter(
+    param: Union[Parameter30, Parameter31],
+    config: PydanticOpenAPIGeneratorConfig,
+) -> GeneratedParameter:
+    return config.parameter_configuration_for(param.name).resolve_parameter(param)
+
+
+def _method_signature(parameters: List[GeneratedParameter], body_param: Optional[str]) -> str:
+    required_params: List[str] = []
+    default_params: List[str] = []
+
+    for parameter in parameters:
+        rendered = f"{parameter.code_name}: {parameter.type_hint}"
+        if parameter.default is None:
+            required_params.append(rendered)
+        else:
+            default_params.append(f"{rendered} = {parameter.default}")
+
+    if body_param is not None:
+        required_params.append(body_param)
+
+    all_params = required_params + default_params
+    return ", ".join(all_params) + (", " if all_params else "")
+
+
+def _body_signature_param(operation: Operation) -> Optional[str]:
+    if operation.requestBody is None or is_reference_type(operation.requestBody):
+        if isinstance(operation.requestBody, (Reference, Reference30, Reference31)):
+            return f"data : {operation.requestBody.ref.split('/')[-1]}"  # type: ignore
+        return None
+
+    rb_content = getattr(operation.requestBody, "content", None)
+    operation_request_body_types = [
+        "application/json",
+        "text/plain",
+        "multipart/form-data",
+        "application/x-www-form-urlencoded",
+        "application/octet-stream",
+    ]
+    if not isinstance(rb_content, dict):
+        return None
+    content_type = next((i for i in operation_request_body_types if rb_content.get(i)), None)
+    if content_type is None:
+        return None
+    content = rb_content.get(content_type)
+    if content is None or not hasattr(content, "media_type_schema"):
+        return None
+    mts = getattr(content, "media_type_schema", None)
+    if isinstance(mts, (Reference, Reference30, Reference31)):
+        return f"data : {mts.ref.split('/')[-1]}"  # type: ignore
+    if isinstance(mts, (Schema, Schema30, Schema31)):
+        return f"data : {type_converter(mts, True).converted_type}"  # type: ignore
+    return None
+
+
+def _parameter_dict_items(parameters: List[GeneratedParameter]) -> List[str]:
+    return [f"{p.wire_name!r}: {p.value_expression}" for p in parameters]
+
+
+def _resolved_path_name(path_name: str, path_params: List[GeneratedParameter]) -> str:
+    resolved = path_name
+    for parameter in path_params:
+        resolved = re.sub(
+            r"\{" + re.escape(parameter.wire_name) + r"\}",
+            "{" + (parameter.value_expression or parameter.code_name) + "}",
+            resolved,
+        )
+    return clean_up_path_name(resolved)
+
+
+def _collect_client_parameters(
+    operations: List[ServiceOperation],
+    source: ParameterSource,
+) -> List[GeneratedParameter]:
+    collected: Dict[str, GeneratedParameter] = {}
+    wire_by_code_name: Dict[str, str] = {}
+
+    for operation in operations:
+        for parameter in operation.path_params + operation.query_params + operation.header_params:
+            if parameter.source != source:
+                continue
+
+            if parameter.code_name in RESERVED_CLIENT_MEMBER_NAMES:
+                raise ValueError(f"Configured parameter code_name {parameter.code_name!r} is reserved")
+
+            existing_wire_name = wire_by_code_name.get(parameter.code_name)
+            if existing_wire_name is not None and existing_wire_name != parameter.wire_name:
+                raise ValueError(
+                    f"Configured parameter code_name {parameter.code_name!r} is used by both "
+                    f"{existing_wire_name!r} and {parameter.wire_name!r}"
+                )
+
+            wire_by_code_name[parameter.code_name] = parameter.wire_name
+            existing = collected.get(parameter.code_name)
+            if existing is None:
+                collected[parameter.code_name] = parameter
+                continue
+
+            if not existing.required and parameter.required:
+                existing.required = True
+                existing.field_type_hint = parameter.field_type_hint
+                existing.field_default = parameter.field_default
+
+    return list(collected.values())
+
+
 def generate_params(operation: Operation) -> str:
     def _schema_default(schema: Any) -> Any:
         default = getattr(schema, "default", None)
@@ -337,6 +457,25 @@ def generate_query_params(operation: Operation) -> List[str]:
 
 def generate_header_params(operation: Operation) -> List[str]:
     return _generate_params(operation, "header")
+
+
+def generate_operation_parameters(
+    operation: Operation,
+    config: PydanticOpenAPIGeneratorConfig,
+    param_in: Optional[Literal["path", "query", "header", "cookie"]] = None,
+) -> List[GeneratedParameter]:
+    if operation.parameters is None:
+        return []
+
+    parameters: List[GeneratedParameter] = []
+    for param in operation.parameters:
+        if not isinstance(param, (Parameter30, Parameter31)):
+            continue
+        if param_in is not None and param.param_in != param_in:
+            continue
+        parameters.append(_resolve_parameter(param, config))
+
+    return parameters
 
 
 def _is_binary_schema(schema: Any) -> bool:
@@ -524,6 +663,7 @@ def generate_clients(
     library_config: LibraryConfig,
     env_token_name: Optional[str],
     pydantic_version: PydanticVersion,
+    config: Optional[PydanticOpenAPIGeneratorConfig] = None,
 ) -> List[Model]:
     """
     Generate two client modules:
@@ -533,6 +673,7 @@ def generate_clients(
     jinja_env = create_jinja_env()
 
     service_ops: List[ServiceOperation] = []
+    generator_config = config or PydanticOpenAPIGeneratorConfig()
 
     def _generate_service_operation(
         op: Operation,
@@ -556,24 +697,29 @@ def generate_clients(
                         op.parameters = []  # type: ignore
                     op.parameters.append(p)  # type: ignore
 
-        params = generate_params(op)
+        request_body = generate_request_body(op)
+        body_param = None if request_body is None else request_body.expression
+        path_params = generate_operation_parameters(op, generator_config, "path")
+        query_params = generate_operation_parameters(op, generator_config, "query")
+        header_params = generate_operation_parameters(op, generator_config, "header")
+        all_params = path_params + query_params + header_params
+        params = _method_signature(all_params, _body_signature_param(op) if body_param is not None else None)
+        path_name = _resolved_path_name(path_name, path_params)
+
         placeholder_names = [m.group(1) for m in re.finditer(r"\{([^}/]+)\}", path_name)]
-        existing_param_names = {p.split(":")[0].strip() for p in params.split(",") if ":" in p}
+        existing_param_names = {p.code_name for p in all_params}
         for ph in placeholder_names:
             norm_ph = common.normalize_symbol(ph)
             if norm_ph not in existing_param_names and norm_ph:
                 params = f"{norm_ph}: Any, " + params
 
         operation_id = generate_operation_id(op, http_operation, path_name)
-        query_params = generate_query_params(op)
-        header_params = generate_header_params(op)
         return_type = generate_return_type(op)
-        request_body = generate_request_body(op)
-        body_param = None if request_body is None else request_body.expression
 
         so = ServiceOperation(
             params=params,
             operation_id=operation_id,
+            path_params=path_params,
             query_params=query_params,
             header_params=header_params,
             return_type=return_type,
@@ -605,6 +751,8 @@ def generate_clients(
 
     sync_ops = [so for so in service_ops if not so.async_client]
     async_ops = [so for so in service_ops if so.async_client]
+    client_fields = _collect_client_parameters(service_ops, ParameterSource.CLASS_VAR)
+    client_functions = _collect_client_parameters(service_ops, ParameterSource.FUNCTION)
 
     openapi_dump = openapi.model_dump() if hasattr(openapi, "model_dump") else {}
 
@@ -612,11 +760,15 @@ def generate_clients(
         **openapi_dump,
         env_token_name=env_token_name,
         operations=[so.model_dump() for so in sync_ops],
+        client_fields=[p.model_dump() for p in client_fields],
+        client_functions=[p.model_dump() for p in client_functions],
     )
     async_content = jinja_env.get_template(ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2).render(
         **openapi_dump,
         env_token_name=env_token_name,
         operations=[so.model_dump() for so in async_ops],
+        client_fields=[p.model_dump() for p in client_fields],
+        client_functions=[p.model_dump() for p in client_functions],
     )
 
     compile(sync_content, "<string>", "exec")

@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Union
 import json
 
 import httpx
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, SecretStr, TypeAdapter
 
 from ..models import *
 from ..exceptions import HTTPException
@@ -23,6 +23,9 @@ class AsyncClient(BaseModel):
 {% if env_token_name is none %}
     access_token: Optional[str] = None
 {% endif %}
+{% for field in client_fields %}
+    {{ field.code_name }}: {{ field.field_type_hint }}{% if field.field_default is not none %} = {{ field.field_default }}{% endif %}{{ "\n" }}
+{% endfor %}
 
     async def get_access_token(self) -> Optional[str]:
 {% if env_token_name is not none %}
@@ -44,6 +47,11 @@ class AsyncClient(BaseModel):
         self.access_token = value
 {% endif %}
 
+{% for function in client_functions %}
+    async def {{ function.getter_name }}(self) -> {{ function.base_type_hint }}:
+        raise NotImplementedError
+
+{% endfor %}
 {% for op in operations %}
     async def {{ op.operation_id }}(self{% if op.params %}, {{ op.params }}{% endif %}) -> {%- if op.is_sse -%}
 AsyncGenerator[str | dict[str, Any], None]
@@ -51,6 +59,17 @@ AsyncGenerator[str | dict[str, Any], None]
 {{ op.return_type.return_type_hint or "None" }}
 {%- endif -%}:
         base_url = self.base_url
+{% for param in op.path_params + op.query_params + op.header_params %}
+{% if param.source == "ClassVar" %}
+{% if param.is_secret %}
+        {{ param.local_name }} = {{ param.code_name }} if {{ param.code_name }} is not None else (self.{{ param.code_name }}.get_secret_value() if self.{{ param.code_name }} is not None else None)
+{% else %}
+        {{ param.local_name }} = {{ param.code_name }} if {{ param.code_name }} is not None else self.{{ param.code_name }}
+{% endif %}
+{% elif param.source == "Function" %}
+        {{ param.local_name }} = {{ param.code_name }} if {{ param.code_name }} is not None else await self.{{ param.getter_name }}()
+{% endif %}
+{% endfor %}
         path = f"{{ op.path_name }}"
 
         headers = {
@@ -65,7 +84,7 @@ AsyncGenerator[str | dict[str, Any], None]
             "Accept": "{{ op.return_type.accept_content_types | join(', ') or 'application/json' }}",
 {% endif %}
 {% for hp in op.header_params %}
-            {{ hp }},
+            "{{ hp.wire_name }}": {{ hp.value_expression }},
 {% endfor %}
         }
         headers = {k: v for (k, v) in headers.items() if v is not None}
@@ -76,7 +95,7 @@ AsyncGenerator[str | dict[str, Any], None]
 
         query_params: Dict[str, Any] = {
 {% for qp in op.query_params %}
-            {{ qp }},
+            "{{ qp.wire_name }}": {{ qp.value_expression }},
 {% endfor %}
         }
         query_params = {k: v for (k, v) in query_params.items() if v is not None}

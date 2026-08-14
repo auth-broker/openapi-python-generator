@@ -20,6 +20,8 @@ from openapi_pydantic.v3.v3_1 import (
 )
 from pydantic import BaseModel, Field
 
+from pydantic_openapi_generator.config.parameter_source import ParameterSource
+
 # Type unions for compatibility with both OpenAPI 3.0 and 3.1
 Operation = Union[Operation30, Operation31]
 PathItem = Union[PathItem30, PathItem31]
@@ -66,11 +68,29 @@ class RequestBodyDefinition(BaseModel):
     expression: str
 
 
+class GeneratedParameter(BaseModel):
+    wire_name: str
+    code_name: str
+    location: Literal["path", "query", "header", "cookie"]
+    type_hint: str
+    base_type_hint: str
+    required: bool
+    default: Optional[str] = None
+    source: ParameterSource = ParameterSource.KWARG
+    is_secret: bool = False
+    field_type_hint: Optional[str] = None
+    field_default: Optional[str] = None
+    getter_name: Optional[str] = None
+    local_name: Optional[str] = None
+    value_expression: Optional[str] = None
+
+
 class ServiceOperation(BaseModel):
     params: str
     operation_id: str
-    query_params: List[str]
-    header_params: List[str]
+    path_params: List[GeneratedParameter] = Field(default_factory=list)
+    query_params: List[GeneratedParameter]
+    header_params: List[GeneratedParameter]
     return_type: OpReturnType
     operation: Operation
     pathItem: PathItem
