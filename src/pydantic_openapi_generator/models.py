@@ -112,6 +112,7 @@ class ServiceOperation(BaseModel):
     request_body: Optional[RequestBodyDefinition] = None
     method: str
     is_sse: bool = False
+    sse_data_handler: Optional[ResponseContentHandler] = None
     use_orjson: bool = False
 
 

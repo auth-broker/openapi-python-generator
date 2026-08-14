@@ -53,7 +53,7 @@ class AsyncClient(BaseModel):
 {% endfor %}
 {% for op in operations %}
     async def {{ op.operation_id }}(self{% if op.params %}, {{ op.params }}{% endif %}) -> {%- if op.is_sse -%}
-AsyncGenerator[str | dict[str, Any], None]
+AsyncGenerator[str | {% if op.sse_data_handler and op.sse_data_handler.type %}{% if op.sse_data_handler.list_type %}list[{{ op.sse_data_handler.list_type }}]{% else %}{{ op.sse_data_handler.type.converted_type }}{% endif %}{% else %}dict[str, Any]{% endif %}, None]
 {%- else -%}
 {{ op.return_type.return_type_hint or "None" }}
 {%- endif -%}:
@@ -132,11 +132,16 @@ AsyncGenerator[str | dict[str, Any], None]
                         if payload == "[DONE]":
                             break
                         try:
+{% if op.sse_data_handler and op.sse_data_handler.type %}
+                            obj = json.loads(payload)
+                            yield TypeAdapter({% if op.sse_data_handler.list_type %}list[{{ op.sse_data_handler.list_type }}]{% else %}{{ op.sse_data_handler.type.converted_type }}{% endif %}).validate_python(obj)
+{% else %}
                             obj = json.loads(payload)
                             if isinstance(obj, dict):
                                 yield obj
                             else:
                                 yield payload
+{% endif %}
                         except Exception:
                             yield payload
                     else:

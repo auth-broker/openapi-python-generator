@@ -155,6 +155,73 @@ def operation_is_sse(op: Operation) -> bool:
     return False
 
 
+def _sse_data_schema_from_media_type(media_type: Any) -> Any:
+    media_type_schema = getattr(media_type, "media_type_schema", None)
+    if media_type_schema is None:
+        return None
+
+    if is_reference_type(media_type_schema):
+        return media_type_schema
+
+    if not is_schema_type(media_type_schema):
+        return None
+
+    properties = getattr(media_type_schema, "properties", None)
+    if isinstance(properties, dict) and "data" in properties:
+        return properties["data"]
+
+    schema_type = getattr(media_type_schema, "type", None)
+    if schema_type != "object" and str(schema_type) != "DataType.OBJECT":
+        return media_type_schema
+
+    return None
+
+
+def generate_sse_data_handler(operation: Operation) -> Optional[ResponseContentHandler]:
+    if not getattr(operation, "responses", None):
+        return None
+
+    for status_code, response in operation.responses.items():
+        try:
+            if not str(status_code).startswith("2"):
+                continue
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.debug("Skipping response status key; conversion failed", exc_info=e)
+            continue
+
+        if not is_response_type(response):
+            continue
+
+        content = getattr(response, "content", None)
+        if not isinstance(content, dict):
+            continue
+
+        media_type = content.get("text/event-stream")
+        if not is_media_type(media_type):
+            continue
+
+        data_schema = _sse_data_schema_from_media_type(media_type)
+        if data_schema is None:
+            continue
+
+        variant = _response_variant_from_schema(
+            int(status_code), "application/json", data_schema
+        )
+        if variant.type is None or variant.body_kind == "empty":
+            continue
+
+        return ResponseContentHandler(
+            content_type="text/event-stream",
+            type=variant.type,
+            complex_type=variant.complex_type,
+            list_type=variant.list_type,
+            body_kind=variant.body_kind,  # type: ignore[arg-type]
+        )
+
+    return None
+
+
 HTTP_OPERATIONS = ["get", "post", "put", "delete", "options", "head", "patch", "trace"]
 
 
@@ -869,6 +936,7 @@ def generate_clients(
             path_name=path_name,
             method=http_operation,
             is_sse=operation_is_sse(op),
+            sse_data_handler=generate_sse_data_handler(op),
             use_orjson=common.get_use_orjson(),
         )
 
