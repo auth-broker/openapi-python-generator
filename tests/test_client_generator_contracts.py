@@ -134,6 +134,31 @@ CONTRACT_SPEC = {
                 "responses": {"204": {"description": "Deleted"}},
             }
         },
+        "/events": {
+            "get": {
+                "operationId": "getEvents",
+                "responses": {
+                    "200": {
+                        "description": "Successful event stream connection.",
+                        "content": {
+                            "text/event-stream": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data"],
+                                    "properties": {
+                                        "event": {"type": "string"},
+                                        "data": {
+                                            "$ref": "#/components/schemas/EventPayload"
+                                        },
+                                        "id": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    }
+                },
+            }
+        },
     },
     "components": {
         "schemas": {
@@ -151,6 +176,14 @@ CONTRACT_SPEC = {
                 "type": "object",
                 "required": ["documentId"],
                 "properties": {"documentId": {"type": "string"}},
+            },
+            "EventPayload": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string", "format": "date-time"},
+                    "value": {"type": "number"},
+                },
             },
         }
     },
@@ -263,6 +296,40 @@ def test_generated_clients_honor_openapi_request_response_contracts(
     assert download_request.headers["accept"] == "application/pdf"
 
 
+@pytest.mark.respx(assert_all_called=False, assert_all_mocked=True)
+@pytest.mark.parametrize("async_client", [False, True])
+def test_generated_clients_gracefully_decode_undocumented_successes(
+    generated_contract_package,
+    respx_mock,
+    async_client,
+):
+    respx_mock.get("http://testserver/things").mock(
+        return_value=httpx.Response(201, json={"unexpected": True})
+    )
+    respx_mock.post("http://testserver/upload").mock(
+        return_value=httpx.Response(201, json={"documentId": "doc-201"})
+    )
+
+    if async_client:
+        client_module = importlib.import_module(
+            f"{generated_contract_package}.clients.async_client"
+        )
+        client = client_module.AsyncClient()
+        ambiguous, upload = asyncio.run(_run_async_undocumented_successes(client))
+    else:
+        client_module = importlib.import_module(
+            f"{generated_contract_package}.clients.sync_client"
+        )
+        client = client_module.SyncClient()
+        ambiguous = client.getThing(X_Test_Header="required")
+        upload = client.uploadDocument(
+            data={"file": ("doc.txt", b"hello", "text/plain")}
+        )
+
+    assert ambiguous == {"unexpected": True}
+    assert upload.documentId == "doc-201"
+
+
 CONFIG_CONTENT = """
 parameters:
   - name: X-Test-Header
@@ -354,6 +421,46 @@ def test_generated_clients_resolve_configured_parameter_sources(
     assert "**********" not in second_request.headers["X-Test-Header"]
 
 
+@pytest.mark.respx(assert_all_called=False, assert_all_mocked=True)
+@pytest.mark.parametrize("async_client", [False, True])
+def test_generated_sse_data_payloads_use_declared_schema(
+    generated_contract_package,
+    respx_mock,
+    async_client,
+):
+    respx_mock.get("http://testserver/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=(
+                b"event: update\n"
+                b'data: {"message": "ok", "timestamp": "2026-08-14T00:00:00Z", "value": 42.5}\n'
+                b"\n"
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    models = importlib.import_module(f"{generated_contract_package}.models")
+
+    if async_client:
+        client_module = importlib.import_module(
+            f"{generated_contract_package}.clients.async_client"
+        )
+        client = client_module.AsyncClient()
+        first_data_item = asyncio.run(_first_async_sse_data_item(client))
+    else:
+        client_module = importlib.import_module(
+            f"{generated_contract_package}.clients.sync_client"
+        )
+        client = client_module.SyncClient()
+        first_data_item = next(
+            item for item in client.getEvents() if not isinstance(item, str)
+        )
+
+    assert isinstance(first_data_item, models.EventPayload)
+    assert first_data_item.message == "ok"
+    assert first_data_item.value == 42.5
+
+
 async def _run_async_configured_contract(client):
     await client.getThing(product_brand="CGU")
     await client.getThing(
@@ -362,6 +469,21 @@ async def _run_async_configured_contract(client):
         dynamic_header="function-override",
         product_brand="AMI",
     )
+
+
+async def _first_async_sse_data_item(client):
+    async for item in client.getEvents():
+        if not isinstance(item, str):
+            return item
+    raise AssertionError("No typed SSE data item yielded")
+
+
+async def _run_async_undocumented_successes(client):
+    ambiguous = await client.getThing(X_Test_Header="required")
+    upload = await client.uploadDocument(
+        data={"file": ("doc.txt", b"hello", "text/plain")}
+    )
+    return ambiguous, upload
 
 
 def test_duplicate_configured_code_name_fails_generation():

@@ -10,7 +10,6 @@ import httpx
 from pydantic import BaseModel, SecretStr, TypeAdapter
 
 from ..models import *
-from ..exceptions import HTTPException
 
 {% set _base_url = servers[0].url if servers|length > 0 else "/" %}
 
@@ -54,7 +53,7 @@ class SyncClient(BaseModel):
 {% endfor %}
 {% for op in operations %}
     def {{ op.operation_id }}(self{% if op.params %}, {{ op.params }}{% endif %}) -> {%- if op.is_sse -%}
-Generator[str | dict[str, Any], None, None]
+Generator[str | {% if op.sse_data_handler and op.sse_data_handler.type %}{% if op.sse_data_handler.list_type %}list[{{ op.sse_data_handler.list_type }}]{% else %}{{ op.sse_data_handler.type.converted_type }}{% endif %}{% else %}dict[str, Any]{% endif %}, None, None]
 {%- else -%}
 {{ op.return_type.return_type_hint or "None" }}
 {%- endif -%}:
@@ -121,11 +120,7 @@ Generator[str | dict[str, Any], None, None]
 {% endif %}
 {% endif %}
             ) as response:
-                if response.status_code not in {{ op.return_type.accepted_status_codes or [op.return_type.status_code] }}:
-                    raise HTTPException(
-                        response.status_code,
-                        f"{{ op.operation_id }} failed with status code: {response.status_code}",
-                    )
+                response.raise_for_status()
 
                 for line in response.iter_lines():
                     if not line:
@@ -137,11 +132,16 @@ Generator[str | dict[str, Any], None, None]
                         if payload == "[DONE]":
                             break
                         try:
+{% if op.sse_data_handler and op.sse_data_handler.type %}
+                            obj = json.loads(payload)
+                            yield TypeAdapter({% if op.sse_data_handler.list_type %}list[{{ op.sse_data_handler.list_type }}]{% else %}{{ op.sse_data_handler.type.converted_type }}{% endif %}).validate_python(obj)
+{% else %}
                             obj = json.loads(payload)
                             if isinstance(obj, dict):
                                 yield obj
                             else:
                                 yield payload
+{% endif %}
                         except Exception:
                             yield payload
                     else:
@@ -168,23 +168,60 @@ Generator[str | dict[str, Any], None, None]
 {% endif %}
             )
 
-        if response.status_code not in {{ op.return_type.accepted_status_codes or [op.return_type.status_code] }}:
-            raise HTTPException(
-                response.status_code,
-                f"{{ op.operation_id }} failed with status code: {response.status_code}",
-            )
+        response.raise_for_status()
+
+{% set empty_variants = op.return_type.variants | selectattr("body_kind", "equalto", "empty") | list %}
+{% if empty_variants|length > 0 %}
+        if not response.content:
+            return None
+
+{% endif %}
+{% if op.return_type.unambiguous_content_handlers|length == 1 %}
+{% set handler = op.return_type.unambiguous_content_handlers[0] %}
+{% if handler.body_kind == "binary" %}
+        return response.content
+{% elif handler.body_kind == "text" %}
+        return response.text
+{% elif handler.type is not none and handler.type.converted_type is not none %}
+{% if handler.list_type is none %}
+        return TypeAdapter({{ handler.type.converted_type }}).validate_python(response.json())
+{% else %}
+        return TypeAdapter(list[{{ handler.list_type }}]).validate_python(response.json())
+{% endif %}
+{% else %}
+        return response.json()
+{% endif %}
+{% else %}
+        if not response.content:
+            return None
 
         _response_content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+{% set unambiguous_content_types = op.return_type.unambiguous_content_handlers | map(attribute="content_type") | list %}
+{% for handler in op.return_type.unambiguous_content_handlers %}
+        if _response_content_type == "{{ handler.content_type }}":
+{% if handler.body_kind == "binary" %}
+            return response.content
+{% elif handler.body_kind == "text" %}
+            return response.text
+{% elif handler.type is not none and handler.type.converted_type is not none %}
+{% if handler.list_type is none %}
+            return TypeAdapter({{ handler.type.converted_type }}).validate_python(response.json())
+{% else %}
+            return TypeAdapter(list[{{ handler.list_type }}]).validate_python(response.json())
+{% endif %}
+{% else %}
+            return response.json()
+{% endif %}
+
+{% endfor %}
 {% for variant in op.return_type.variants %}
-{% set same_status_variants = op.return_type.variants | selectattr("status_code", "equalto", variant.status_code) | list %}
-        if response.status_code == {{ variant.status_code }}{% if same_status_variants|length > 1 and variant.content_type %} and _response_content_type == "{{ variant.content_type }}"{% endif %}:
-{% if variant.body_kind == "empty" or variant.type is none or variant.type.converted_type is none %}
-            return None
-{% elif variant.body_kind == "binary" %}
+{% if variant.content_type and variant.body_kind != "empty" and variant.content_type not in unambiguous_content_types %}
+        if response.status_code == {{ variant.status_code }} and _response_content_type == "{{ variant.content_type }}":
+{% if variant.body_kind == "binary" %}
             return response.content
 {% elif variant.body_kind == "text" %}
             return response.text
-{% elif variant.complex_type %}
+{% elif variant.type is not none and variant.type.converted_type is not none %}
 {% if variant.list_type is none %}
             return TypeAdapter({{ variant.type.converted_type }}).validate_python(response.json())
 {% else %}
@@ -194,11 +231,16 @@ Generator[str | dict[str, Any], None, None]
             return response.json()
 {% endif %}
 
+{% endif %}
 {% endfor %}
-        raise HTTPException(
-            response.status_code,
-            f"{{ op.operation_id }} failed with unsupported content type: {_response_content_type}",
-        )
+        if _response_content_type == "application/json" or _response_content_type.endswith("+json"):
+            return response.json()
+
+        if _response_content_type.startswith("text/"):
+            return response.text
+
+        return response.content
+{% endif %}
 {% endif %}
 
 {% endfor %}
