@@ -10,15 +10,9 @@ class PydanticOpenAPIGeneratorConfig(BaseModel):
 
     parameters: list[ArgumentConfiguration] = Field(default_factory=list)
 
-    def parameter_configuration_for(
-        self, parameter_name: str
-    ) -> BaseArgumentConfiguration:
+    def parameter_configuration_for(self, parameter_name: str) -> BaseArgumentConfiguration:
         configured = self.parameters_by_name().get(parameter_name)
-        return (
-            configured
-            if configured is not None
-            else KwargArgumentConfiguration(name=parameter_name)
-        )
+        return configured if configured is not None else KwargArgumentConfiguration(name=parameter_name)
 
     def parameters_by_name(self) -> dict[str, ArgumentConfiguration]:
         return {parameter.name: parameter for parameter in self.parameters}

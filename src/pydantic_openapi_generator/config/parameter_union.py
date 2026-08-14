@@ -11,8 +11,6 @@ from pydantic_openapi_generator.config.function_parameter import (
 from pydantic_openapi_generator.config.kwarg_parameter import KwargArgumentConfiguration
 
 ArgumentConfiguration = Annotated[
-    KwargArgumentConfiguration
-    | ClassVarArgumentConfiguration
-    | FunctionArgumentConfiguration,
+    KwargArgumentConfiguration | ClassVarArgumentConfiguration | FunctionArgumentConfiguration,
     Field(discriminator="type"),
 ]

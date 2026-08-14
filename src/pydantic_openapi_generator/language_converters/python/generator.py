@@ -49,16 +49,12 @@ def generator(
     # so client return types that reference those aliases have corresponding
     # model modules available in the output.
     if data.paths is not None:
-        resp_alias_models = generate_response_union_alias_models(
-            data.paths, pydantic_version
-        )
+        resp_alias_models = generate_response_union_alias_models(data.paths, pydantic_version)
         if resp_alias_models:
             models.extend(resp_alias_models)
 
     if data.paths is not None:
-        clients = generate_clients(
-            data, data.paths, library_config, env_token_name, pydantic_version, config
-        )
+        clients = generate_clients(data, data.paths, library_config, env_token_name, pydantic_version, config)
     else:
         clients = []
 
