@@ -39,11 +39,10 @@ from openapi_pydantic.v3.v3_1 import (
 from openapi_pydantic.v3.v3_1.parameter import Parameter as Parameter31
 
 from pydantic_openapi_generator.common import PydanticVersion
-from pydantic_openapi_generator.config import (
-    ClassVarArgumentConfiguration,
-    FunctionArgumentConfiguration,
+from pydantic_openapi_generator.config.generator_config import (
     PydanticOpenAPIGeneratorConfig,
 )
+from pydantic_openapi_generator.config.parameter_source import ParameterSource
 from pydantic_openapi_generator.language_converters.python import common
 from pydantic_openapi_generator.language_converters.python.jinja_config import (
     ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
@@ -251,144 +250,11 @@ def generate_body_param(operation: Operation) -> Union[str, None]:
     return None if request_body is None else request_body.expression
 
 
-def _lower_code_name(value: str) -> str:
-    normalized = common.normalize_symbol(value)
-    parts = re.findall(r"[A-Z]+(?=[A-Z][a-z0-9]|$)|[A-Z]?[a-z0-9]+", normalized)
-    return "_".join(part.lower() for part in parts) or normalized.lower()
-
-
-def _schema_default(schema: Any) -> Any:
-    return getattr(schema, "default", None)
-
-
-def _literal_default(schema: Any) -> Optional[str]:
-    default = _schema_default(schema)
-    return f"{default!r}" if default is not None else None
-
-
-def _optional_type(type_hint: str) -> str:
-    if type_hint.startswith("Optional[") and type_hint.endswith("]"):
-        return type_hint
-    return f"Optional[{type_hint}]"
-
-
-def _parameter_type_hint(param: Union[Parameter30, Parameter31], required: bool) -> str:
-    if isinstance(param.param_schema, (Schema30, Schema31)):
-        return type_converter(param.param_schema, required).converted_type
-    if isinstance(param.param_schema, (Reference30, Reference31)):
-        model_name = common.normalize_symbol(param.param_schema.ref.split("/")[-1])
-        return model_name if required else f"Optional[{model_name}]"
-    return "Any"
-
-
-def _parameter_base_type_hint(param: Union[Parameter30, Parameter31]) -> str:
-    return _parameter_type_hint(param, True)
-
-
-def _parameter_default(param: Union[Parameter30, Parameter31]) -> Optional[str]:
-    if isinstance(param.param_schema, (Schema30, Schema31)):
-        return _literal_default(param.param_schema)
-    return None
-
-
-def _configured_source(configuration: Any) -> Literal["kwarg", "class_var", "function"]:
-    if isinstance(configuration, ClassVarArgumentConfiguration):
-        return "class_var"
-    if isinstance(configuration, FunctionArgumentConfiguration):
-        return "function"
-    return "kwarg"
-
-
-def _configured_code_name(param_name: str, configuration: Any) -> str:
-    if configuration is not None and configuration.code_name:
-        return common.normalize_symbol(configuration.code_name)
-    if isinstance(
-        configuration, (ClassVarArgumentConfiguration, FunctionArgumentConfiguration)
-    ):
-        return _lower_code_name(param_name)
-    return common.normalize_symbol(param_name)
-
-
-def _method_type_and_default(
-    *,
-    param: Union[Parameter30, Parameter31],
-    source: Literal["kwarg", "class_var", "function"],
-) -> tuple[str, Optional[str]]:
-    base_type = _parameter_base_type_hint(param)
-    default = _parameter_default(param)
-
-    if source in {"class_var", "function"}:
-        return _optional_type(base_type), "None"
-
-    if param.required:
-        return base_type, None
-
-    if default is not None:
-        return base_type, default
-
-    return _optional_type(base_type), "None"
-
-
-def _field_type_and_default(
-    *,
-    param: Union[Parameter30, Parameter31],
-    is_secret: bool,
-) -> tuple[str, Optional[str]]:
-    default = _parameter_default(param)
-    base_type = "SecretStr" if is_secret else _parameter_base_type_hint(param)
-
-    if param.required:
-        return base_type, None
-
-    if default is not None:
-        return base_type, default
-
-    return _optional_type(base_type), "None"
-
-
 def _resolve_parameter(
     param: Union[Parameter30, Parameter31],
-    config_by_name: Dict[str, Any],
+    config: PydanticOpenAPIGeneratorConfig,
 ) -> GeneratedParameter:
-    configuration = config_by_name.get(param.name)
-    source = _configured_source(configuration)
-    code_name = _configured_code_name(param.name, configuration)
-    base_type_hint = _parameter_base_type_hint(param)
-    type_hint, default = _method_type_and_default(param=param, source=source)
-    is_secret = bool(getattr(configuration, "is_secret", False))
-    field_type_hint = None
-    field_default = None
-    getter_name = None
-    local_name = None
-    value_expression = code_name
-
-    if source == "class_var":
-        field_type_hint, field_default = _field_type_and_default(
-            param=param, is_secret=is_secret
-        )
-        local_name = f"_{code_name}"
-        value_expression = local_name
-    elif source == "function":
-        getter_name = f"get_{code_name}"
-        local_name = f"_{code_name}"
-        value_expression = local_name
-
-    return GeneratedParameter(
-        wire_name=param.name,
-        code_name=code_name,
-        location=param.param_in,  # type: ignore[arg-type]
-        type_hint=type_hint,
-        base_type_hint=base_type_hint,
-        required=param.required,
-        default=default,
-        source=source,
-        is_secret=is_secret,
-        field_type_hint=field_type_hint,
-        field_default=field_default,
-        getter_name=getter_name,
-        local_name=local_name,
-        value_expression=value_expression,
-    )
+    return config.parameter_configuration_for(param.name).resolve_parameter(param)
 
 
 def _method_signature(
@@ -460,7 +326,7 @@ def _resolved_path_name(path_name: str, path_params: List[GeneratedParameter]) -
 
 def _collect_client_parameters(
     operations: List[ServiceOperation],
-    source: Literal["class_var", "function"],
+    source: ParameterSource,
 ) -> List[GeneratedParameter]:
     collected: Dict[str, GeneratedParameter] = {}
     wire_by_code_name: Dict[str, str] = {}
@@ -641,7 +507,7 @@ def generate_header_params(operation: Operation) -> List[str]:
 
 def generate_operation_parameters(
     operation: Operation,
-    config_by_name: Dict[str, Any],
+    config: PydanticOpenAPIGeneratorConfig,
     param_in: Optional[Literal["path", "query", "header", "cookie"]] = None,
 ) -> List[GeneratedParameter]:
     if operation.parameters is None:
@@ -653,7 +519,7 @@ def generate_operation_parameters(
             continue
         if param_in is not None and param.param_in != param_in:
             continue
-        parameters.append(_resolve_parameter(param, config_by_name))
+        parameters.append(_resolve_parameter(param, config))
 
     return parameters
 
@@ -903,9 +769,6 @@ def generate_clients(
 
     service_ops: List[ServiceOperation] = []
     generator_config = config or PydanticOpenAPIGeneratorConfig()
-    config_by_name: Dict[str, Any] = {
-        parameter.name: parameter for parameter in generator_config.parameters
-    }
 
     def _generate_service_operation(
         op: Operation,
@@ -934,9 +797,9 @@ def generate_clients(
 
         request_body = generate_request_body(op)
         body_param = None if request_body is None else request_body.expression
-        path_params = generate_operation_parameters(op, config_by_name, "path")
-        query_params = generate_operation_parameters(op, config_by_name, "query")
-        header_params = generate_operation_parameters(op, config_by_name, "header")
+        path_params = generate_operation_parameters(op, generator_config, "path")
+        query_params = generate_operation_parameters(op, generator_config, "query")
+        header_params = generate_operation_parameters(op, generator_config, "header")
         all_params = path_params + query_params + header_params
         params = _method_signature(
             all_params, _body_signature_param(op) if body_param is not None else None
@@ -998,8 +861,8 @@ def generate_clients(
 
     sync_ops = [so for so in service_ops if not so.async_client]
     async_ops = [so for so in service_ops if so.async_client]
-    client_fields = _collect_client_parameters(service_ops, "class_var")
-    client_functions = _collect_client_parameters(service_ops, "function")
+    client_fields = _collect_client_parameters(service_ops, ParameterSource.CLASS_VAR)
+    client_functions = _collect_client_parameters(service_ops, ParameterSource.FUNCTION)
 
     openapi_dump = openapi.model_dump() if hasattr(openapi, "model_dump") else {}
 

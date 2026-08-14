@@ -20,6 +20,8 @@ from openapi_pydantic.v3.v3_1 import (
 )
 from pydantic import BaseModel, Field
 
+from pydantic_openapi_generator.config.parameter_source import ParameterSource
+
 # Type unions for compatibility with both OpenAPI 3.0 and 3.1
 Operation = Union[Operation30, Operation31]
 PathItem = Union[PathItem30, PathItem31]
@@ -74,7 +76,7 @@ class GeneratedParameter(BaseModel):
     base_type_hint: str
     required: bool
     default: Optional[str] = None
-    source: Literal["kwarg", "class_var", "function"] = "kwarg"
+    source: ParameterSource = ParameterSource.KWARG
     is_secret: bool = False
     field_type_hint: Optional[str] = None
     field_default: Optional[str] = None

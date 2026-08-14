@@ -12,7 +12,8 @@ from httpx import ConnectError, ConnectTimeout
 from pydantic import ValidationError
 
 from .common import FormatOptions, Formatter, HTTPLibrary, PydanticVersion
-from .config import PydanticOpenAPIGeneratorConfig, load_config
+from .config.generator_config import PydanticOpenAPIGeneratorConfig
+from .config.loader import load_config
 from .models import ConversionResult
 from .parsers import (
     generate_code_3_0,

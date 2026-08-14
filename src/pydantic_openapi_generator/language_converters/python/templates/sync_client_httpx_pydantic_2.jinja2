@@ -60,13 +60,13 @@ Generator[str | dict[str, Any], None, None]
 {%- endif -%}:
         base_url = self.base_url
 {% for param in op.path_params + op.query_params + op.header_params %}
-{% if param.source == "class_var" %}
+{% if param.source == "ClassVar" %}
 {% if param.is_secret %}
         {{ param.local_name }} = {{ param.code_name }} if {{ param.code_name }} is not None else (self.{{ param.code_name }}.get_secret_value() if self.{{ param.code_name }} is not None else None)
 {% else %}
         {{ param.local_name }} = {{ param.code_name }} if {{ param.code_name }} is not None else self.{{ param.code_name }}
 {% endif %}
-{% elif param.source == "function" %}
+{% elif param.source == "Function" %}
         {{ param.local_name }} = {{ param.code_name }} if {{ param.code_name }} is not None else self.{{ param.getter_name }}()
 {% endif %}
 {% endfor %}

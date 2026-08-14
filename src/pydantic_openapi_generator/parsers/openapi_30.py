@@ -7,7 +7,9 @@ from typing import Optional
 from openapi_pydantic.v3.v3_0 import OpenAPI
 
 from pydantic_openapi_generator.common import HTTPLibrary, PydanticVersion
-from pydantic_openapi_generator.config import PydanticOpenAPIGeneratorConfig
+from pydantic_openapi_generator.config.generator_config import (
+    PydanticOpenAPIGeneratorConfig,
+)
 from pydantic_openapi_generator.language_converters.python.generator import (
     generator as base_generator,
 )
