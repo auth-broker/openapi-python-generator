@@ -39,6 +39,11 @@ from openapi_pydantic.v3.v3_1 import (
 from openapi_pydantic.v3.v3_1.parameter import Parameter as Parameter31
 
 from pydantic_openapi_generator.common import PydanticVersion
+from pydantic_openapi_generator.config import (
+    ClassVarArgumentConfiguration,
+    FunctionArgumentConfiguration,
+    PydanticOpenAPIGeneratorConfig,
+)
 from pydantic_openapi_generator.language_converters.python import common
 from pydantic_openapi_generator.language_converters.python.jinja_config import (
     ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2,
@@ -49,6 +54,7 @@ from pydantic_openapi_generator.language_converters.python.model_generator impor
     type_converter,
 )
 from pydantic_openapi_generator.models import (
+    GeneratedParameter,
     LibraryConfig,
     Model,
     OpReturnType,
@@ -57,6 +63,15 @@ from pydantic_openapi_generator.models import (
     ServiceOperation,
     TypeConversion,
 )
+
+RESERVED_CLIENT_MEMBER_NAMES = {
+    "base_url",
+    "verify",
+    "access_token",
+    "get_access_token",
+    "set_access_token",
+    "model_config",
+}
 
 
 # Helper functions for isinstance checks across OpenAPI versions
@@ -144,7 +159,9 @@ HTTP_OPERATIONS = ["get", "post", "put", "delete", "options", "head", "patch", "
 
 
 def _json_body_expression(media_type_schema: Any) -> str:
-    if isinstance(media_type_schema, (Reference, Reference30, Reference31)) or hasattr(media_type_schema, "ref"):
+    if isinstance(media_type_schema, (Reference, Reference30, Reference31)) or hasattr(
+        media_type_schema, "ref"
+    ):
         return "data.model_dump(by_alias=True, exclude_none=True)"
 
     if isinstance(media_type_schema, (Schema, Schema30, Schema31)):
@@ -158,7 +175,9 @@ def _json_body_expression(media_type_schema: Any) -> str:
 
         return "data"
 
-    raise Exception(f"Unsupported schema type for request body: {type(media_type_schema)}")  # pragma: no cover
+    raise Exception(
+        f"Unsupported schema type for request body: {type(media_type_schema)}"
+    )  # pragma: no cover
 
 
 def generate_request_body(operation: Operation) -> Union[RequestBodyDefinition, None]:
@@ -184,7 +203,9 @@ def generate_request_body(operation: Operation) -> Union[RequestBodyDefinition, 
         "application/octet-stream",
         "text/plain",
     ]
-    content_type = next((ct for ct in ordered_content_types if rb_content.get(ct) is not None), None)
+    content_type = next(
+        (ct for ct in ordered_content_types if rb_content.get(ct) is not None), None
+    )
     if content_type is None:
         return None
 
@@ -203,16 +224,24 @@ def generate_request_body(operation: Operation) -> Union[RequestBodyDefinition, 
         )
 
     if content_type == "multipart/form-data":
-        return RequestBodyDefinition(content_type=None, encoding="multipart", expression="data")
+        return RequestBodyDefinition(
+            content_type=None, encoding="multipart", expression="data"
+        )
 
     if content_type == "application/x-www-form-urlencoded":
-        return RequestBodyDefinition(content_type=content_type, encoding="form", expression="data")
+        return RequestBodyDefinition(
+            content_type=content_type, encoding="form", expression="data"
+        )
 
     if content_type == "application/octet-stream":
-        return RequestBodyDefinition(content_type=content_type, encoding="binary", expression="data")
+        return RequestBodyDefinition(
+            content_type=content_type, encoding="binary", expression="data"
+        )
 
     if content_type == "text/plain":
-        return RequestBodyDefinition(content_type=content_type, encoding="text", expression="data")
+        return RequestBodyDefinition(
+            content_type=content_type, encoding="text", expression="data"
+        )
 
     return None  # pragma: no cover
 
@@ -220,6 +249,256 @@ def generate_request_body(operation: Operation) -> Union[RequestBodyDefinition, 
 def generate_body_param(operation: Operation) -> Union[str, None]:
     request_body = generate_request_body(operation)
     return None if request_body is None else request_body.expression
+
+
+def _lower_code_name(value: str) -> str:
+    normalized = common.normalize_symbol(value)
+    parts = re.findall(r"[A-Z]+(?=[A-Z][a-z0-9]|$)|[A-Z]?[a-z0-9]+", normalized)
+    return "_".join(part.lower() for part in parts) or normalized.lower()
+
+
+def _schema_default(schema: Any) -> Any:
+    return getattr(schema, "default", None)
+
+
+def _literal_default(schema: Any) -> Optional[str]:
+    default = _schema_default(schema)
+    return f"{default!r}" if default is not None else None
+
+
+def _optional_type(type_hint: str) -> str:
+    if type_hint.startswith("Optional[") and type_hint.endswith("]"):
+        return type_hint
+    return f"Optional[{type_hint}]"
+
+
+def _parameter_type_hint(param: Union[Parameter30, Parameter31], required: bool) -> str:
+    if isinstance(param.param_schema, (Schema30, Schema31)):
+        return type_converter(param.param_schema, required).converted_type
+    if isinstance(param.param_schema, (Reference30, Reference31)):
+        model_name = common.normalize_symbol(param.param_schema.ref.split("/")[-1])
+        return model_name if required else f"Optional[{model_name}]"
+    return "Any"
+
+
+def _parameter_base_type_hint(param: Union[Parameter30, Parameter31]) -> str:
+    return _parameter_type_hint(param, True)
+
+
+def _parameter_default(param: Union[Parameter30, Parameter31]) -> Optional[str]:
+    if isinstance(param.param_schema, (Schema30, Schema31)):
+        return _literal_default(param.param_schema)
+    return None
+
+
+def _configured_source(configuration: Any) -> Literal["kwarg", "class_var", "function"]:
+    if isinstance(configuration, ClassVarArgumentConfiguration):
+        return "class_var"
+    if isinstance(configuration, FunctionArgumentConfiguration):
+        return "function"
+    return "kwarg"
+
+
+def _configured_code_name(param_name: str, configuration: Any) -> str:
+    if configuration is not None and configuration.code_name:
+        return common.normalize_symbol(configuration.code_name)
+    if isinstance(
+        configuration, (ClassVarArgumentConfiguration, FunctionArgumentConfiguration)
+    ):
+        return _lower_code_name(param_name)
+    return common.normalize_symbol(param_name)
+
+
+def _method_type_and_default(
+    *,
+    param: Union[Parameter30, Parameter31],
+    source: Literal["kwarg", "class_var", "function"],
+) -> tuple[str, Optional[str]]:
+    base_type = _parameter_base_type_hint(param)
+    default = _parameter_default(param)
+
+    if source in {"class_var", "function"}:
+        return _optional_type(base_type), "None"
+
+    if param.required:
+        return base_type, None
+
+    if default is not None:
+        return base_type, default
+
+    return _optional_type(base_type), "None"
+
+
+def _field_type_and_default(
+    *,
+    param: Union[Parameter30, Parameter31],
+    is_secret: bool,
+) -> tuple[str, Optional[str]]:
+    default = _parameter_default(param)
+    base_type = "SecretStr" if is_secret else _parameter_base_type_hint(param)
+
+    if param.required:
+        return base_type, None
+
+    if default is not None:
+        return base_type, default
+
+    return _optional_type(base_type), "None"
+
+
+def _resolve_parameter(
+    param: Union[Parameter30, Parameter31],
+    config_by_name: Dict[str, Any],
+) -> GeneratedParameter:
+    configuration = config_by_name.get(param.name)
+    source = _configured_source(configuration)
+    code_name = _configured_code_name(param.name, configuration)
+    base_type_hint = _parameter_base_type_hint(param)
+    type_hint, default = _method_type_and_default(param=param, source=source)
+    is_secret = bool(getattr(configuration, "is_secret", False))
+    field_type_hint = None
+    field_default = None
+    getter_name = None
+    local_name = None
+    value_expression = code_name
+
+    if source == "class_var":
+        field_type_hint, field_default = _field_type_and_default(
+            param=param, is_secret=is_secret
+        )
+        local_name = f"_{code_name}"
+        value_expression = local_name
+    elif source == "function":
+        getter_name = f"get_{code_name}"
+        local_name = f"_{code_name}"
+        value_expression = local_name
+
+    return GeneratedParameter(
+        wire_name=param.name,
+        code_name=code_name,
+        location=param.param_in,  # type: ignore[arg-type]
+        type_hint=type_hint,
+        base_type_hint=base_type_hint,
+        required=param.required,
+        default=default,
+        source=source,
+        is_secret=is_secret,
+        field_type_hint=field_type_hint,
+        field_default=field_default,
+        getter_name=getter_name,
+        local_name=local_name,
+        value_expression=value_expression,
+    )
+
+
+def _method_signature(
+    parameters: List[GeneratedParameter], body_param: Optional[str]
+) -> str:
+    required_params: List[str] = []
+    default_params: List[str] = []
+
+    for parameter in parameters:
+        rendered = f"{parameter.code_name}: {parameter.type_hint}"
+        if parameter.default is None:
+            required_params.append(rendered)
+        else:
+            default_params.append(f"{rendered} = {parameter.default}")
+
+    if body_param is not None:
+        required_params.append(body_param)
+
+    all_params = required_params + default_params
+    return ", ".join(all_params) + (", " if all_params else "")
+
+
+def _body_signature_param(operation: Operation) -> Optional[str]:
+    if operation.requestBody is None or is_reference_type(operation.requestBody):
+        if isinstance(operation.requestBody, (Reference, Reference30, Reference31)):
+            return f"data : {operation.requestBody.ref.split('/')[-1]}"  # type: ignore
+        return None
+
+    rb_content = getattr(operation.requestBody, "content", None)
+    operation_request_body_types = [
+        "application/json",
+        "text/plain",
+        "multipart/form-data",
+        "application/x-www-form-urlencoded",
+        "application/octet-stream",
+    ]
+    if not isinstance(rb_content, dict):
+        return None
+    content_type = next(
+        (i for i in operation_request_body_types if rb_content.get(i)), None
+    )
+    if content_type is None:
+        return None
+    content = rb_content.get(content_type)
+    if content is None or not hasattr(content, "media_type_schema"):
+        return None
+    mts = getattr(content, "media_type_schema", None)
+    if isinstance(mts, (Reference, Reference30, Reference31)):
+        return f"data : {mts.ref.split('/')[-1]}"  # type: ignore
+    if isinstance(mts, (Schema, Schema30, Schema31)):
+        return f"data : {type_converter(mts, True).converted_type}"  # type: ignore
+    return None
+
+
+def _parameter_dict_items(parameters: List[GeneratedParameter]) -> List[str]:
+    return [f"{p.wire_name!r}: {p.value_expression}" for p in parameters]
+
+
+def _resolved_path_name(path_name: str, path_params: List[GeneratedParameter]) -> str:
+    resolved = path_name
+    for parameter in path_params:
+        resolved = re.sub(
+            r"\{" + re.escape(parameter.wire_name) + r"\}",
+            "{" + (parameter.value_expression or parameter.code_name) + "}",
+            resolved,
+        )
+    return clean_up_path_name(resolved)
+
+
+def _collect_client_parameters(
+    operations: List[ServiceOperation],
+    source: Literal["class_var", "function"],
+) -> List[GeneratedParameter]:
+    collected: Dict[str, GeneratedParameter] = {}
+    wire_by_code_name: Dict[str, str] = {}
+
+    for operation in operations:
+        for parameter in (
+            operation.path_params + operation.query_params + operation.header_params
+        ):
+            if parameter.source != source:
+                continue
+
+            if parameter.code_name in RESERVED_CLIENT_MEMBER_NAMES:
+                raise ValueError(
+                    f"Configured parameter code_name {parameter.code_name!r} is reserved"
+                )
+
+            existing_wire_name = wire_by_code_name.get(parameter.code_name)
+            if (
+                existing_wire_name is not None
+                and existing_wire_name != parameter.wire_name
+            ):
+                raise ValueError(
+                    f"Configured parameter code_name {parameter.code_name!r} is used by both "
+                    f"{existing_wire_name!r} and {parameter.wire_name!r}"
+                )
+
+            wire_by_code_name[parameter.code_name] = parameter.wire_name
+            existing = collected.get(parameter.code_name)
+            if existing is None:
+                collected[parameter.code_name] = parameter
+                continue
+
+            if not existing.required and parameter.required:
+                existing.required = True
+                existing.field_type_hint = parameter.field_type_hint
+                existing.field_default = parameter.field_default
+
+    return list(collected.values())
 
 
 def generate_params(operation: Operation) -> str:
@@ -257,17 +536,26 @@ def generate_params(operation: Operation) -> str:
             required = False
             param_name_cleaned = common.normalize_symbol(param.name)
 
-            if isinstance(param.param_schema, Schema30) or isinstance(param.param_schema, Schema31):
+            if isinstance(param.param_schema, Schema30) or isinstance(
+                param.param_schema, Schema31
+            ):
                 converted_result = (
                     f"{param_name_cleaned} : {type_converter(param.param_schema, param.required).converted_type}"
                     + _default_suffix(param.param_schema, param.required)
                 )
                 required = param.required
-            elif isinstance(param.param_schema, Reference30) or isinstance(param.param_schema, Reference31):
-                converted_result = f"{param_name_cleaned} : {param.param_schema.ref.split('/')[-1]}" + (
-                    ""
-                    if isinstance(param, Reference30) or isinstance(param, Reference31) or param.required
-                    else " = None"
+            elif isinstance(param.param_schema, Reference30) or isinstance(
+                param.param_schema, Reference31
+            ):
+                converted_result = (
+                    f"{param_name_cleaned} : {param.param_schema.ref.split('/')[-1]}"
+                    + (
+                        ""
+                        if isinstance(param, Reference30)
+                        or isinstance(param, Reference31)
+                        or param.required
+                        else " = None"
+                    )
                 )
                 required = isinstance(param, Reference) or param.required
 
@@ -284,11 +572,17 @@ def generate_params(operation: Operation) -> str:
         "application/octet-stream",
     ]
 
-    if operation.requestBody is not None and not is_reference_type(operation.requestBody):
+    if operation.requestBody is not None and not is_reference_type(
+        operation.requestBody
+    ):
         # Safe access only if it's a concrete RequestBody object
         rb_content = getattr(operation.requestBody, "content", None)
-        if isinstance(rb_content, dict) and any(rb_content.get(i) is not None for i in operation_request_body_types):
-            get_keyword = [i for i in operation_request_body_types if rb_content.get(i)][0]
+        if isinstance(rb_content, dict) and any(
+            rb_content.get(i) is not None for i in operation_request_body_types
+        ):
+            get_keyword = [
+                i for i in operation_request_body_types if rb_content.get(i)
+            ][0]
             content = rb_content.get(get_keyword)
             if content is not None and hasattr(content, "media_type_schema"):
                 mts = getattr(content, "media_type_schema", None)
@@ -298,7 +592,9 @@ def generate_params(operation: Operation) -> str:
                 ):
                     params += f"{_generate_params_from_content(mts)}, "
                 else:  # pragma: no cover
-                    raise Exception(f"Unsupported media type schema for {str(operation)}: {type(mts)}")
+                    raise Exception(
+                        f"Unsupported media type schema for {str(operation)}: {type(mts)}"
+                    )
         # else: silently ignore unsupported body shapes (could extend later)
     # Replace - with _ in params
     params = params.replace("-", "_")
@@ -307,7 +603,9 @@ def generate_params(operation: Operation) -> str:
     return params + default_params
 
 
-def generate_operation_id(operation: Operation, http_op: str, path_name: Optional[str] = None) -> str:
+def generate_operation_id(
+    operation: Operation, http_op: str, path_name: Optional[str] = None
+) -> str:
     if operation.operationId is not None:
         return common.normalize_symbol(operation.operationId)
     elif path_name is not None:
@@ -318,7 +616,9 @@ def generate_operation_id(operation: Operation, http_op: str, path_name: Optiona
         )  # pragma: no cover
 
 
-def _generate_params(operation: Operation, param_in: Literal["query", "header"] = "query"):
+def _generate_params(
+    operation: Operation, param_in: Literal["query", "header"] = "query"
+):
     if operation.parameters is None:
         return []
 
@@ -339,10 +639,31 @@ def generate_header_params(operation: Operation) -> List[str]:
     return _generate_params(operation, "header")
 
 
+def generate_operation_parameters(
+    operation: Operation,
+    config_by_name: Dict[str, Any],
+    param_in: Optional[Literal["path", "query", "header", "cookie"]] = None,
+) -> List[GeneratedParameter]:
+    if operation.parameters is None:
+        return []
+
+    parameters: List[GeneratedParameter] = []
+    for param in operation.parameters:
+        if not isinstance(param, (Parameter30, Parameter31)):
+            continue
+        if param_in is not None and param.param_in != param_in:
+            continue
+        parameters.append(_resolve_parameter(param, config_by_name))
+
+    return parameters
+
+
 def _is_binary_schema(schema: Any) -> bool:
     schema_format = getattr(schema, "schema_format", None)
     schema_type = getattr(schema, "type", None)
-    return (schema_type == "string" or str(schema_type) == "DataType.STRING") and schema_format == "binary"
+    return (
+        schema_type == "string" or str(schema_type) == "DataType.STRING"
+    ) and schema_format == "binary"
 
 
 def _body_kind_for_content(
@@ -353,7 +674,11 @@ def _body_kind_for_content(
     lowered = content_type.lower()
     if lowered == "application/json" or lowered.endswith("+json"):
         return "json"
-    if lowered == "application/pdf" or lowered == "application/octet-stream" or _is_binary_schema(schema):
+    if (
+        lowered == "application/pdf"
+        or lowered == "application/octet-stream"
+        or _is_binary_schema(schema)
+    ):
         return "binary"
     if lowered.startswith("text/"):
         return "text"
@@ -367,13 +692,17 @@ def _response_variant_from_schema(
 ) -> ResponseVariant:
     body_kind = _body_kind_for_content(content_type, inner_schema)
     if body_kind == "empty":
-        return ResponseVariant(status_code=status_code, content_type=content_type, body_kind="empty")
+        return ResponseVariant(
+            status_code=status_code, content_type=content_type, body_kind="empty"
+        )
 
     if body_kind == "binary":
         return ResponseVariant(
             status_code=status_code,
             content_type=content_type,
-            type=TypeConversion(original_type=content_type or "binary", converted_type="bytes"),
+            type=TypeConversion(
+                original_type=content_type or "binary", converted_type="bytes"
+            ),
             body_kind="binary",
         )
 
@@ -381,7 +710,9 @@ def _response_variant_from_schema(
         return ResponseVariant(
             status_code=status_code,
             content_type=content_type,
-            type=TypeConversion(original_type=content_type or "text", converted_type="str"),
+            type=TypeConversion(
+                original_type=content_type or "text", converted_type="str"
+            ),
             body_kind="text",
         )
 
@@ -401,12 +732,17 @@ def _response_variant_from_schema(
 
     if is_schema_type(inner_schema):
         disc = getattr(inner_schema, "discriminator", None)
-        used = getattr(inner_schema, "oneOf", None) or getattr(inner_schema, "anyOf", None)
+        used = getattr(inner_schema, "oneOf", None) or getattr(
+            inner_schema, "anyOf", None
+        )
         disc_key = getattr(disc, "propertyName", None) if disc is not None else None
 
         if disc_key and used and all(is_reference_type(s) for s in used):
             member_models = [common.normalize_symbol(s.ref.split("/")[-1]) for s in used]  # type: ignore
-            alias_name = common.normalize_symbol(_common_suffix_many(member_models)) or "Response"
+            alias_name = (
+                common.normalize_symbol(_common_suffix_many(member_models))
+                or "Response"
+            )
 
             type_conv = TypeConversion(
                 original_type="discriminated_union",
@@ -423,46 +759,66 @@ def _response_variant_from_schema(
 
         converted_result = type_converter(inner_schema, True)  # type: ignore
         list_type = None
-        if "array" in converted_result.original_type and isinstance(converted_result.import_types, list):
+        if "array" in converted_result.original_type and isinstance(
+            converted_result.import_types, list
+        ):
             matched = re.findall(r"List\[(.+)\]", converted_result.converted_type)
             if len(matched) > 0:
                 list_type = matched[0]
             else:  # pragma: no cover
-                raise Exception(f"Unable to parse list type from {converted_result.converted_type}")
+                raise Exception(
+                    f"Unable to parse list type from {converted_result.converted_type}"
+                )
 
         return ResponseVariant(
             status_code=status_code,
             content_type=content_type,
             type=converted_result,
-            complex_type=bool(converted_result.import_types and len(converted_result.import_types) > 0),
+            complex_type=bool(
+                converted_result.import_types and len(converted_result.import_types) > 0
+            ),
             list_type=list_type,
             body_kind="json",
         )
 
-    return ResponseVariant(status_code=status_code, content_type=content_type, body_kind="empty")
+    return ResponseVariant(
+        status_code=status_code, content_type=content_type, body_kind="empty"
+    )
 
 
-def _response_variants_for_response(status_code: int, response: Union[Response, Reference]) -> List[ResponseVariant]:
+def _response_variants_for_response(
+    status_code: int, response: Union[Response, Reference]
+) -> List[ResponseVariant]:
     if is_reference_type(response):
         media_type = create_media_type_for_reference(response)
         inner_schema = getattr(media_type, "media_type_schema", None)
-        return [_response_variant_from_schema(status_code, "application/json", inner_schema)]
+        return [
+            _response_variant_from_schema(status_code, "application/json", inner_schema)
+        ]
 
     if not is_response_type(response):
         return []
 
     content = getattr(response, "content", None)
     if not isinstance(content, dict) or not content:
-        return [ResponseVariant(status_code=status_code, content_type=None, body_kind="empty")]
+        return [
+            ResponseVariant(
+                status_code=status_code, content_type=None, body_kind="empty"
+            )
+        ]
 
     variants: List[ResponseVariant] = []
     for content_type, media_type in content.items():
         if not is_media_type(media_type):
             continue
         inner_schema = getattr(media_type, "media_type_schema", None)
-        variants.append(_response_variant_from_schema(status_code, content_type, inner_schema))
+        variants.append(
+            _response_variant_from_schema(status_code, content_type, inner_schema)
+        )
 
-    return variants or [ResponseVariant(status_code=status_code, content_type=None, body_kind="empty")]
+    return variants or [
+        ResponseVariant(status_code=status_code, content_type=None, body_kind="empty")
+    ]
 
 
 def _return_type_hint(variants: List[ResponseVariant]) -> str:
@@ -483,7 +839,9 @@ def _return_type_hint(variants: List[ResponseVariant]) -> str:
 
 def generate_return_type(operation: Operation) -> OpReturnType:
     if operation.responses is None:
-        return OpReturnType(type=None, status_code=200, complex_type=False, accepted_status_codes=[200])
+        return OpReturnType(
+            type=None, status_code=200, complex_type=False, accepted_status_codes=[200]
+        )
 
     good_responses: List[Tuple[int, Union[Response, Reference]]] = [
         (int(status_code), response)
@@ -491,21 +849,31 @@ def generate_return_type(operation: Operation) -> OpReturnType:
         if status_code.startswith("2")
     ]
     if len(good_responses) == 0:
-        return OpReturnType(type=None, status_code=200, complex_type=False, accepted_status_codes=[200])
+        return OpReturnType(
+            type=None, status_code=200, complex_type=False, accepted_status_codes=[200]
+        )
 
     variants: List[ResponseVariant] = []
     for status_code, response in good_responses:
         variants.extend(_response_variants_for_response(status_code, response))
 
-    first_variant = variants[0] if variants else ResponseVariant(status_code=good_responses[0][0])
+    first_variant = (
+        variants[0] if variants else ResponseVariant(status_code=good_responses[0][0])
+    )
     return OpReturnType(
         type=first_variant.type,
         status_code=first_variant.status_code,
         complex_type=first_variant.complex_type,
         list_type=first_variant.list_type,
         variants=variants,
-        accepted_status_codes=sorted({status_code for status_code, _ in good_responses}),
-        accept_content_types=list(dict.fromkeys(v.content_type for v in variants if v.content_type is not None)),
+        accepted_status_codes=sorted(
+            {status_code for status_code, _ in good_responses}
+        ),
+        accept_content_types=list(
+            dict.fromkeys(
+                v.content_type for v in variants if v.content_type is not None
+            )
+        ),
         return_type_hint=_return_type_hint(variants),
     )
 
@@ -524,6 +892,7 @@ def generate_clients(
     library_config: LibraryConfig,
     env_token_name: Optional[str],
     pydantic_version: PydanticVersion,
+    config: Optional[PydanticOpenAPIGeneratorConfig] = None,
 ) -> List[Model]:
     """
     Generate two client modules:
@@ -533,6 +902,10 @@ def generate_clients(
     jinja_env = create_jinja_env()
 
     service_ops: List[ServiceOperation] = []
+    generator_config = config or PydanticOpenAPIGeneratorConfig()
+    config_by_name: Dict[str, Any] = {
+        parameter.name: parameter for parameter in generator_config.parameters
+    }
 
     def _generate_service_operation(
         op: Operation,
@@ -551,29 +924,41 @@ def generate_clients(
                     if isinstance(p, (Parameter30, Parameter31)):
                         existing_names.add(p.name)
             for p in path_level_params:
-                if isinstance(p, (Parameter30, Parameter31)) and p.name not in existing_names:
+                if (
+                    isinstance(p, (Parameter30, Parameter31))
+                    and p.name not in existing_names
+                ):
                     if op.parameters is None:
                         op.parameters = []  # type: ignore
                     op.parameters.append(p)  # type: ignore
 
-        params = generate_params(op)
-        placeholder_names = [m.group(1) for m in re.finditer(r"\{([^}/]+)\}", path_name)]
-        existing_param_names = {p.split(":")[0].strip() for p in params.split(",") if ":" in p}
+        request_body = generate_request_body(op)
+        body_param = None if request_body is None else request_body.expression
+        path_params = generate_operation_parameters(op, config_by_name, "path")
+        query_params = generate_operation_parameters(op, config_by_name, "query")
+        header_params = generate_operation_parameters(op, config_by_name, "header")
+        all_params = path_params + query_params + header_params
+        params = _method_signature(
+            all_params, _body_signature_param(op) if body_param is not None else None
+        )
+        path_name = _resolved_path_name(path_name, path_params)
+
+        placeholder_names = [
+            m.group(1) for m in re.finditer(r"\{([^}/]+)\}", path_name)
+        ]
+        existing_param_names = {p.code_name for p in all_params}
         for ph in placeholder_names:
             norm_ph = common.normalize_symbol(ph)
             if norm_ph not in existing_param_names and norm_ph:
                 params = f"{norm_ph}: Any, " + params
 
         operation_id = generate_operation_id(op, http_operation, path_name)
-        query_params = generate_query_params(op)
-        header_params = generate_header_params(op)
         return_type = generate_return_type(op)
-        request_body = generate_request_body(op)
-        body_param = None if request_body is None else request_body.expression
 
         so = ServiceOperation(
             params=params,
             operation_id=operation_id,
+            path_params=path_params,
             query_params=query_params,
             header_params=header_params,
             return_type=return_type,
@@ -599,24 +984,42 @@ def generate_clients(
                 continue
 
             if library_config.include_sync:
-                service_ops.append(_generate_service_operation(op, path, clean_path_name, http_operation, False))
+                service_ops.append(
+                    _generate_service_operation(
+                        op, path, clean_path_name, http_operation, False
+                    )
+                )
             if library_config.include_async:
-                service_ops.append(_generate_service_operation(op, path, clean_path_name, http_operation, True))
+                service_ops.append(
+                    _generate_service_operation(
+                        op, path, clean_path_name, http_operation, True
+                    )
+                )
 
     sync_ops = [so for so in service_ops if not so.async_client]
     async_ops = [so for so in service_ops if so.async_client]
+    client_fields = _collect_client_parameters(service_ops, "class_var")
+    client_functions = _collect_client_parameters(service_ops, "function")
 
     openapi_dump = openapi.model_dump() if hasattr(openapi, "model_dump") else {}
 
-    sync_content = jinja_env.get_template(SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2).render(
+    sync_content = jinja_env.get_template(
+        SYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2
+    ).render(
         **openapi_dump,
         env_token_name=env_token_name,
         operations=[so.model_dump() for so in sync_ops],
+        client_fields=[p.model_dump() for p in client_fields],
+        client_functions=[p.model_dump() for p in client_functions],
     )
-    async_content = jinja_env.get_template(ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2).render(
+    async_content = jinja_env.get_template(
+        ASYNC_CLIENT_HTTPX_TEMPLATE_PYDANTIC_V2
+    ).render(
         **openapi_dump,
         env_token_name=env_token_name,
         operations=[so.model_dump() for so in async_ops],
+        client_fields=[p.model_dump() for p in client_fields],
+        client_functions=[p.model_dump() for p in client_functions],
     )
 
     compile(sync_content, "<string>", "exec")

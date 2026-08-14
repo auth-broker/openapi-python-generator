@@ -12,6 +12,7 @@ from httpx import ConnectError, ConnectTimeout
 from pydantic import ValidationError
 
 from .common import FormatOptions, Formatter, HTTPLibrary, PydanticVersion
+from .config import PydanticOpenAPIGeneratorConfig, load_config
 from .models import ConversionResult
 from .parsers import (
     generate_code_3_0,
@@ -203,11 +204,14 @@ def generate_data(
     custom_template_path: Optional[str] = None,
     pydantic_version: PydanticVersion = PydanticVersion.V2,
     formatter: Formatter = Formatter.BLACK,
+    config_path: Optional[Union[str, Path]] = None,
+    config: Optional[PydanticOpenAPIGeneratorConfig] = None,
 ) -> None:
     """
     Generate Python code from an OpenAPI 3.0+ specification.
     """
     openapi_obj, version = get_open_api(source)
+    loaded_config = config if config is not None else load_config(config_path)
     click.echo(f"Generating data from {source} (OpenAPI {version})")
 
     # Use version-specific generator
@@ -219,6 +223,7 @@ def generate_data(
             use_orjson,
             custom_template_path,
             pydantic_version,
+            loaded_config,
         )
     elif version == "3.1":
         result = generate_code_3_1(
@@ -228,6 +233,7 @@ def generate_data(
             use_orjson,
             custom_template_path,
             pydantic_version,
+            loaded_config,
         )
     else:
         raise ValueError(f"Unsupported OpenAPI version: {version}")

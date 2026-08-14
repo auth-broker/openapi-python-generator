@@ -35,6 +35,12 @@ CONTRACT_SPEC = {
                         "schema": {"type": "string", "default": "AU"},
                     },
                     {
+                        "name": "X-Function-Header",
+                        "in": "header",
+                        "required": False,
+                        "schema": {"type": "string"},
+                    },
+                    {
                         "name": "brand",
                         "in": "query",
                         "required": False,
@@ -153,21 +159,34 @@ CONTRACT_SPEC = {
 
 @pytest.fixture
 def generated_contract_package():
+    yield from _generated_package()
+
+
+def _generated_package(config_content: str | None = None):
     package_name = f"contract_result_{uuid4().hex}"
     temp_dir = Path(tempfile.gettempdir()) / package_name
     spec_path = temp_dir.parent / f"{package_name}.json"
+    config_path = temp_dir.parent / f"{package_name}.yaml"
     temp_dir.mkdir(parents=True, exist_ok=True)
     spec_path.write_text(json.dumps(CONTRACT_SPEC))
+    if config_content is not None:
+        config_path.write_text(config_content)
     sys.path.insert(0, str(temp_dir.parent))
 
     try:
-        generate_data(spec_path, temp_dir, HTTPLibrary.httpx)
+        generate_data(
+            spec_path,
+            temp_dir,
+            HTTPLibrary.httpx,
+            config_path=config_path if config_content is not None else None,
+        )
         yield package_name
     finally:
         if str(temp_dir.parent) in sys.path:
             sys.path.remove(str(temp_dir.parent))
         shutil.rmtree(temp_dir, ignore_errors=True)
         spec_path.unlink(missing_ok=True)
+        config_path.unlink(missing_ok=True)
         for module_name in list(sys.modules):
             if module_name == package_name or module_name.startswith(
                 f"{package_name}."
@@ -242,6 +261,122 @@ def test_generated_clients_honor_openapi_request_response_contracts(
 
     download_request = requests[2]
     assert download_request.headers["accept"] == "application/pdf"
+
+
+CONFIG_CONTENT = """
+parameters:
+  - name: X-Test-Header
+    type: ClassVar
+    code_name: test_header
+    is_secret: true
+  - name: X-Optional-Header
+    type: ClassVar
+    code_name: optional_header
+  - name: X-Function-Header
+    type: Function
+    code_name: dynamic_header
+  - name: brand
+    type: Kwarg
+    code_name: product_brand
+"""
+
+
+@pytest.fixture
+def generated_configured_contract_package():
+    yield from _generated_package(CONFIG_CONTENT)
+
+
+@pytest.mark.respx(assert_all_called=False, assert_all_mocked=True)
+@pytest.mark.parametrize("async_client", [False, True])
+def test_generated_clients_resolve_configured_parameter_sources(
+    generated_configured_contract_package,
+    respx_mock,
+    async_client,
+):
+    requests: list[httpx.Request] = []
+
+    def thing_handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(206, json={"message": "partial"})
+
+    respx_mock.get("http://testserver/things").mock(side_effect=thing_handler)
+
+    if async_client:
+        client_module = importlib.import_module(
+            f"{generated_configured_contract_package}.clients.async_client"
+        )
+
+        class Client(client_module.AsyncClient):
+            getter_calls: int = 0
+
+            async def get_dynamic_header(self) -> str:
+                self.getter_calls += 1
+                return "from-getter"
+
+        client = Client(test_header="from-client", optional_header="from-class")
+        asyncio.run(_run_async_configured_contract(client))
+        assert client.getter_calls == 1
+    else:
+        client_module = importlib.import_module(
+            f"{generated_configured_contract_package}.clients.sync_client"
+        )
+
+        class Client(client_module.SyncClient):
+            getter_calls: int = 0
+
+            def get_dynamic_header(self) -> str:
+                self.getter_calls += 1
+                return "from-getter"
+
+        client = Client(test_header="from-client", optional_header="from-class")
+        client.getThing(product_brand="CGU")
+        client.getThing(
+            test_header="from-override",
+            optional_header="optional-override",
+            dynamic_header="function-override",
+            product_brand="AMI",
+        )
+        assert client.getter_calls == 1
+
+    first_request = requests[0]
+    assert first_request.headers["X-Test-Header"] == "from-client"
+    assert first_request.headers["X-Optional-Header"] == "from-class"
+    assert first_request.headers["X-Function-Header"] == "from-getter"
+    assert first_request.url.params["brand"] == "CGU"
+
+    second_request = requests[1]
+    assert second_request.headers["X-Test-Header"] == "from-override"
+    assert second_request.headers["X-Optional-Header"] == "optional-override"
+    assert second_request.headers["X-Function-Header"] == "function-override"
+    assert second_request.url.params["brand"] == "AMI"
+
+    assert "**********" not in first_request.headers["X-Test-Header"]
+    assert "**********" not in second_request.headers["X-Test-Header"]
+
+
+async def _run_async_configured_contract(client):
+    await client.getThing(product_brand="CGU")
+    await client.getThing(
+        test_header="from-override",
+        optional_header="optional-override",
+        dynamic_header="function-override",
+        product_brand="AMI",
+    )
+
+
+def test_duplicate_configured_code_name_fails_generation():
+    config_content = """
+parameters:
+  - name: X-Test-Header
+    type: ClassVar
+    code_name: shared
+  - name: X-Optional-Header
+    type: ClassVar
+    code_name: shared
+"""
+
+    with pytest.raises(ValueError, match="code_name 'shared'"):
+        list(_generated_package(config_content))
 
 
 async def _run_async_contract(client):

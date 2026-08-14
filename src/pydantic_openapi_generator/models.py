@@ -66,11 +66,29 @@ class RequestBodyDefinition(BaseModel):
     expression: str
 
 
+class GeneratedParameter(BaseModel):
+    wire_name: str
+    code_name: str
+    location: Literal["path", "query", "header", "cookie"]
+    type_hint: str
+    base_type_hint: str
+    required: bool
+    default: Optional[str] = None
+    source: Literal["kwarg", "class_var", "function"] = "kwarg"
+    is_secret: bool = False
+    field_type_hint: Optional[str] = None
+    field_default: Optional[str] = None
+    getter_name: Optional[str] = None
+    local_name: Optional[str] = None
+    value_expression: Optional[str] = None
+
+
 class ServiceOperation(BaseModel):
     params: str
     operation_id: str
-    query_params: List[str]
-    header_params: List[str]
+    path_params: List[GeneratedParameter] = Field(default_factory=list)
+    query_params: List[GeneratedParameter]
+    header_params: List[GeneratedParameter]
     return_type: OpReturnType
     operation: Operation
     pathItem: PathItem
