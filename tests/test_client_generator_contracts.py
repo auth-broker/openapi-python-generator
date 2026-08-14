@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from pydantic_openapi_generator.common import HTTPLibrary
 from pydantic_openapi_generator.generate_data import generate_data
@@ -298,7 +299,7 @@ def test_generated_clients_honor_openapi_request_response_contracts(
 
 @pytest.mark.respx(assert_all_called=False, assert_all_mocked=True)
 @pytest.mark.parametrize("async_client", [False, True])
-def test_generated_clients_gracefully_decode_undocumented_successes(
+def test_generated_clients_validate_undocumented_successes_against_contract(
     generated_contract_package,
     respx_mock,
     async_client,
@@ -315,18 +316,20 @@ def test_generated_clients_gracefully_decode_undocumented_successes(
             f"{generated_contract_package}.clients.async_client"
         )
         client = client_module.AsyncClient()
-        ambiguous, upload = asyncio.run(_run_async_undocumented_successes(client))
+        upload = asyncio.run(_run_async_undocumented_successes(client))
+        with pytest.raises(ValidationError):
+            asyncio.run(client.getThing(X_Test_Header="required"))
     else:
         client_module = importlib.import_module(
             f"{generated_contract_package}.clients.sync_client"
         )
         client = client_module.SyncClient()
-        ambiguous = client.getThing(X_Test_Header="required")
         upload = client.uploadDocument(
             data={"file": ("doc.txt", b"hello", "text/plain")}
         )
+        with pytest.raises(ValidationError):
+            client.getThing(X_Test_Header="required")
 
-    assert ambiguous == {"unexpected": True}
     assert upload.documentId == "doc-201"
 
 
@@ -479,11 +482,10 @@ async def _first_async_sse_data_item(client):
 
 
 async def _run_async_undocumented_successes(client):
-    ambiguous = await client.getThing(X_Test_Header="required")
     upload = await client.uploadDocument(
         data={"file": ("doc.txt", b"hello", "text/plain")}
     )
-    return ambiguous, upload
+    return upload
 
 
 def test_duplicate_configured_code_name_fails_generation():
