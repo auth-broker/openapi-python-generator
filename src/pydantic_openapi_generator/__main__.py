@@ -58,6 +58,13 @@ from pydantic_openapi_generator.generate_data import generate_data
     default=None,
     help="Optional YAML configuration for generated client parameters.",
 )
+@click.option(
+    "--overlay",
+    "overlay_paths",
+    type=click.Path(exists=True, dir_okay=False),
+    multiple=True,
+    help="Optional JSON/YAML OpenAPI overlay file. Can be provided multiple times and is applied in order.",
+)
 @click.version_option(version=__version__)
 def main(
     source: str,
@@ -69,6 +76,7 @@ def main(
     pydantic_version: PydanticVersion = PydanticVersion.V2,
     formatter: Formatter = Formatter.BLACK,
     config_path: Optional[str] = None,
+    overlay_paths: tuple[str, ...] = (),
 ) -> None:
     """
     Generate Python code from an OpenAPI 3.0+ specification.
@@ -86,6 +94,7 @@ def main(
         pydantic_version,
         formatter,
         config_path,
+        overlay_paths,
     )
 
 
