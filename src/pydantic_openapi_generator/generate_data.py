@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Sequence, Union
 
 import black
 import click
@@ -53,7 +53,46 @@ def format_using_black(content: str) -> str:
     return isort.code(formatted_contend, line_length=FormatOptions.line_length)
 
 
-def get_open_api(source: Union[str, Path]):
+def load_openapi_data(source: Union[str, Path]) -> dict[str, Any]:
+    """
+    Load an OpenAPI JSON/YAML document from a URL or local file path.
+    """
+    if not isinstance(source, Path) and (source.startswith("http://") or source.startswith("https://")):
+        content = httpx.get(source).text
+    else:
+        with open(source, "r") as f:
+            content = f.read()
+
+    try:
+        data = orjson.loads(content)
+    except orjson.JSONDecodeError:
+        try:
+            data = yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            click.echo(f"File {source} is neither a valid JSON nor YAML file: {str(e)}")
+            raise
+
+    if not isinstance(data, dict):
+        raise ValueError(f"OpenAPI data loaded from {source} must be a JSON/YAML object.")
+
+    return data
+
+
+def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """
+    Recursively merge two dictionaries. Overlay lists and scalar values replace base values.
+    """
+    result = base.copy()
+    for key, overlay_value in overlay.items():
+        base_value = result.get(key)
+        if isinstance(base_value, dict) and isinstance(overlay_value, dict):
+            result[key] = deep_merge(base_value, overlay_value)
+        else:
+            result[key] = overlay_value
+    return result
+
+
+def get_open_api(source: Union[str, Path], overlay_paths: Optional[Sequence[Union[str, Path]]] = None):
     """
     Tries to fetch the openapi specification file from the web or load from a local file.
     Supports both JSON and YAML formats. Returns the according OpenAPI object.
@@ -61,6 +100,7 @@ def get_open_api(source: Union[str, Path]):
 
     Args:
         source: URL or file path to the OpenAPI specification
+        overlay_paths: Optional JSON/YAML overlay files to deep-merge into source in order
 
     Returns:
         tuple: (OpenAPI object, version) where version is "3.0" or "3.1"
@@ -72,29 +112,9 @@ def get_open_api(source: Union[str, Path]):
         JSONDecodeError/YAMLError: If the file cannot be parsed
     """
     try:
-        # Handle remote files
-        if not isinstance(source, Path) and (source.startswith("http://") or source.startswith("https://")):
-            content = httpx.get(source).text
-            # Try JSON first, then YAML for remote files
-            try:
-                data = orjson.loads(content)
-            except orjson.JSONDecodeError:
-                data = yaml.safe_load(content)
-        else:
-            # Handle local files
-            with open(source, "r") as f:
-                file_content = f.read()
-
-                # Try JSON first
-                try:
-                    data = orjson.loads(file_content)
-                except orjson.JSONDecodeError:
-                    # If JSON fails, try YAML
-                    try:
-                        data = yaml.safe_load(file_content)
-                    except yaml.YAMLError as e:
-                        click.echo(f"File {source} is neither a valid JSON nor YAML file: {str(e)}")
-                        raise
+        data = load_openapi_data(source)
+        for overlay_path in overlay_paths or ():
+            data = deep_merge(data, load_openapi_data(overlay_path))
 
         # Detect version and parse with appropriate parser
         version = detect_openapi_version(data)
@@ -206,12 +226,13 @@ def generate_data(
     pydantic_version: PydanticVersion = PydanticVersion.V2,
     formatter: Formatter = Formatter.BLACK,
     config_path: Optional[Union[str, Path]] = None,
+    overlay_paths: Optional[Sequence[Union[str, Path]]] = None,
     config: Optional[PydanticOpenAPIGeneratorConfig] = None,
 ) -> None:
     """
     Generate Python code from an OpenAPI 3.0+ specification.
     """
-    openapi_obj, version = get_open_api(source)
+    openapi_obj, version = get_open_api(source, overlay_paths)
     loaded_config = config if config is not None else load_config(config_path)
     click.echo(f"Generating data from {source} (OpenAPI {version})")
 
