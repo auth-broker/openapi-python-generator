@@ -1,6 +1,7 @@
 """Test cases for the __main__ module."""
 
 import json
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -55,3 +56,29 @@ parameters:
 
     assert result.exit_code == 0
     assert (output_path / "clients" / "sync_client.py").exists()
+
+
+def test_main_accepts_multiple_overlays_in_order(runner: CliRunner, tmp_path) -> None:
+    source_path = tmp_path / "openapi.json"
+    output_path = tmp_path / "generated"
+    first_overlay_path = tmp_path / "first.yaml"
+    second_overlay_path = tmp_path / "second.json"
+    source_path.write_text(json.dumps(CONTRACT_SPEC))
+    first_overlay_path.write_text("components: {}")
+    second_overlay_path.write_text("{}")
+
+    with patch("pydantic_openapi_generator.__main__.generate_data") as generate_data_mock:
+        result = runner.invoke(
+            main,
+            [
+                str(source_path),
+                str(output_path),
+                "--overlay",
+                str(first_overlay_path),
+                "--overlay",
+                str(second_overlay_path),
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert generate_data_mock.call_args.args[-1] == (str(first_overlay_path), str(second_overlay_path))

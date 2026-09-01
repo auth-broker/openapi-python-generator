@@ -1,6 +1,7 @@
-from pathlib import Path
+import json
 import shutil
 import subprocess
+from pathlib import Path
 
 import orjson
 import pytest
@@ -51,6 +52,62 @@ def test_get_open_api(model_data):
     # Test non-existent file
     with pytest.raises(FileNotFoundError):
         get_open_api(test_data_folder / "file_does_not_exist.json")
+
+
+def test_get_open_api_deep_merges_json_and_yaml_overlays_in_order(tmp_path):
+    source_path = tmp_path / "openapi.yaml"
+    first_overlay_path = tmp_path / "first-overlay.json"
+    second_overlay_path = tmp_path / "second-overlay.yaml"
+    source_path.write_text(
+        """
+openapi: 3.0.1
+info:
+    title: Overlay test
+    version: "1"
+paths: {}
+components:
+    schemas:
+        CommunicationDetails:
+            type: object
+            required:
+                - received_date
+                - sent_date
+            properties:
+                received_date:
+                    type: string
+                    format: date-time
+                sent_date:
+                    type: string
+                    format: date-time
+"""
+    )
+    first_overlay_path.write_text(
+        json.dumps(
+            {
+                "components": {
+                    "schemas": {
+                        "CommunicationDetails": {"required": ["received_date"]},
+                    }
+                }
+            }
+        )
+    )
+    second_overlay_path.write_text(
+        """
+components:
+    schemas:
+        CommunicationDetails:
+            required:
+                - sent_date
+"""
+    )
+
+    openapi_obj, version = get_open_api(source_path, [first_overlay_path, second_overlay_path])
+
+    communication_details = openapi_obj.components.schemas["CommunicationDetails"]
+    assert version == "3.0"
+    assert communication_details.required == ["sent_date"]
+    assert set(communication_details.properties) == {"received_date", "sent_date"}
 
 
 def test_generate_data(model_data_with_cleanup):
